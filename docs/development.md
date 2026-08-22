@@ -39,6 +39,18 @@ Run `npm run dist:bootstrap` for the installer distributed to new PCs. The boots
 
 `npm run dist:release` builds both the transition NSIS updater and a versioned application package. Packaged builds download, verify, and extract that application package into `%LOCALAPPDATA%\jss-clips\app-versions` in the background. The update button appears only when preparation is complete; clicking it switches the active-version pointer and restarts Clips without running an installer.
 
+## Publishing a release
+
+After committing the application changes and a first changelog entry whose version is `next`, run one command from the primary `main` worktree:
+
+```powershell
+npm run release -- 0.7-nightly
+```
+
+Use the development line followed by `-nightly` for a nightly, or the development line alone for an explicitly approved stable promotion (for example, `npm run release -- 0.7`). The command refuses to run outside the primary `main` worktree or with uncommitted changes. It checks the expected version line and credentials, runs the full test suite, creates and commits release metadata, selects a fresh runtime build when runtime-affecting files changed, builds the artifacts, publishes the correct channel or channels, and waits for R2, CDN, and GitHub verification. Safe retention cleanup is attempted afterward, but an unrelated older archive that cannot yet be pruned is retained and reported without invalidating the new release. Pass `--fresh` to force runtime restaging when needed.
+
+If a build, upload, or verification step fails, fix the reported problem and run the identical command again. The workflow recognizes already-committed release metadata and resumes safely. It never pushes branch commits; publishing pushes only the immutable release tag after the public update is live.
+
 Published update metadata is signed with Ed25519. Generate the key pair once with `npm run keys:update`, then move the private key to protected/offline storage and set `CLIPS_UPDATE_SIGNING_KEY` in `.env` to its absolute path. Commit and distribute `src/update-signing-public.pem`; never commit or copy the private key into a build machine except while producing a release. Release builds fail closed when the private key is unavailable, and clients reject missing, modified, or incorrectly signed metadata before downloading an application package.
 
 ## Test capture locally

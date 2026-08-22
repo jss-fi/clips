@@ -1,5 +1,12 @@
 [
   {
+    "version": "next",
+    "title": "One command takes releases to the finish line",
+    "changes": [
+      "Release builds now use one guarded command that checks, versions, packages, publishes, archives, and verifies every artifact before it finishes."
+    ]
+  },
+  {
     "version": "0.6-nightly.10",
     "title": "Smoother large libraries",
     "changes": [
