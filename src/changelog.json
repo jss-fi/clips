@@ -1,6 +1,6 @@
 [
   {
-    "version": "next",
+    "version": "0.6-nightly.12",
     "title": "Update diagnostics survive restarts",
     "changes": [
       "Copied update diagnostics now retain the preceding download trace after restarting into a new version, making slow transfers and fallback behavior easier to identify."
