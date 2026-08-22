@@ -1,6 +1,6 @@
 [
   {
-    "version": "next",
+    "version": "0.6-nightly.11",
     "title": "Better-organized settings, reliable updates, and simpler releases",
     "changes": [
       "Settings now use labeled navigation and focused Recording, Clips, Video, Audio, Storage, Advanced, and About pages.",
