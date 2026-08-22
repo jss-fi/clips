@@ -38,6 +38,13 @@ test('Windows npm subprocesses run through the npm JavaScript CLI', () => {
   );
 });
 
+test('captured Git porcelain output preserves its leading status column', () => {
+  assert.equal(
+    workflow.capturedOutput(' M package-lock.json\r\n M package.json\r\n'),
+    ' M package-lock.json\r\n M package.json'
+  );
+});
+
 test('worktree porcelain parsing preserves the primary worktree and branches', () => {
   const parsed = workflow.parseWorktrees([
     'worktree G:/clips',

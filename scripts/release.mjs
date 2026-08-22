@@ -182,6 +182,10 @@ export function commandInvocation(name, args, options = {}) {
   return { command: name, args };
 }
 
+export function capturedOutput(value) {
+  return String(value || '').trimEnd();
+}
+
 function run(command, args, label, options = {}) {
   if (!options.quiet) console.log(`[release] ${label}`);
   const capture = Boolean(options.capture);
@@ -200,7 +204,7 @@ function run(command, args, label, options = {}) {
     const detail = capture ? String(result.stderr || result.stdout || '').trim() : '';
     throw new Error(`${label} failed with exit code ${result.status}${detail ? `: ${detail}` : ''}`);
   }
-  return capture ? String(result.stdout || '').trim() : '';
+  return capture ? capturedOutput(result.stdout) : '';
 }
 
 function git(args) {
