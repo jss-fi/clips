@@ -18,4 +18,8 @@ test('monitor throttles full storage scans independently of game detection', () 
   assert.match(source, /if \(!storageCleanupFresh\) await cleanupStorageOnSchedule\(true\)/);
   assert.match(source, /await cleanupStorageOnSchedule\(\)/);
   assert.match(source, /await startSession\(\{ storageCleanupFresh: true \}\)/);
+  assert.match(source, /await cleanupStorage\(\);\s*lastStorageCleanupAt = Date\.now\(\)/);
+  assert.match(source, /async function startInstantReplay\(\{ storageCleanupFresh = false \} = \{\}\)/);
+  assert.match(source, /replayLengthSeconds: settings\.instantReplayLengthSeconds, storageCleanupFresh/);
+  assert.equal((source.match(/await startInstantReplay\(\{ storageCleanupFresh: true \}\);/g) || []).length, 2);
 });
