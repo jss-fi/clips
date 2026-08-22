@@ -50,21 +50,25 @@
 
       <div id="settings-navigation" class="sidebar-body hidden">
         <nav class="sidebar-menu settings-menu" aria-label="Settings sections">
-          <button class="settings-nav-item active" type="button" data-settings-group="general" aria-label="General">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></svg>
-            <span>General</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-group="capture" aria-label="Capture">
+          <button class="settings-nav-item active" type="button" data-settings-group="recording" aria-label="Recording">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg>
-            <span>Capture</span>
+            <span>Recording</span>
+          </button>
+          <button class="settings-nav-item" type="button" data-settings-group="clips" aria-label="Clips">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-12h-6z"/></svg>
+            <span>Clips</span>
+          </button>
+          <button class="settings-nav-item" type="button" data-settings-group="video" aria-label="Video">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10M7 13h6"/></svg>
+            <span>Video</span>
+          </button>
+          <button class="settings-nav-item" type="button" data-settings-group="audio" aria-label="Audio">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>
+            <span>Audio</span>
           </button>
           <button class="settings-nav-item" type="button" data-settings-group="storage" aria-label="Storage">
             <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/></svg>
             <span>Storage</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-group="integrations" aria-label="Editor">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></svg>
-            <span>Editor</span>
           </button>
           <button class="settings-nav-item" type="button" data-settings-group="advanced" aria-label="Advanced">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.7 6.3 3 3M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10zM12 20h8"/></svg>
@@ -149,98 +153,96 @@
       <section id="settings" class="page settings-page" aria-labelledby="settings-title">
         <span id="settings-title" class="sr-only">Settings</span>
         <div class="settings-scroll">
-          <div id="settings-general" class="settings-group active" data-settings-page="general">
-            <div class="settings-heading"><h1>General</h1><p>Choose which games Clips watches and how it behaves in the background.</p></div>
+          <div id="settings-recording" class="settings-group active" data-settings-page="recording">
+            <div class="settings-heading"><h1>Recording</h1><p>Choose when Clips records and which games it watches.</p></div>
             <section class="settings-section">
-              <div class="settings-section-title"><h2>Games</h2><p>Recording starts while any application in this list is running.</p></div>
-              <div class="settings-block">
-                <div class="settings-row settings-row-stack">
-                  <div class="row-heading"><div><strong>Monitored games</strong><small>Executables that trigger automatic recording.</small></div><button id="scan" class="button outline" type="button">Add running game</button></div>
-                  <div id="game-list" class="game-list"></div>
-                  <div id="process-picker" class="process-picker hidden"></div>
-                  <div id="ignored-game-list" class="game-list"></div>
-                </div>
-              </div>
-            </section>
-            <section class="settings-section">
-              <div class="settings-section-title"><h2>Startup</h2></div>
+              <div class="settings-section-title"><h2>Recording behavior</h2></div>
               <div class="settings-block">
                 <label class="settings-row" for="auto"><span><strong>Automatic recording</strong><small>Start recording when a monitored game is detected.</small></span><input id="auto" name="autoRecord" type="checkbox" role="switch"></label>
                 <label class="settings-row" for="startup"><span><strong>Launch in background</strong><small>Start Clips and its capture engine when you sign in to Windows.</small></span><input id="startup" name="startWithWindows" type="checkbox" role="switch"></label>
-              </div>
-            </section>
-            <section class="settings-section"><div class="settings-section-title"><h2>Per-game profiles</h2><p>Override quality, resolution, frame rate, and replay length for each monitored game.</p></div><div id="game-profiles" class="settings-block"></div></section>
-          </div>
-
-          <div id="settings-capture" class="settings-group" data-settings-page="capture">
-            <div class="settings-heading"><h1>Capture</h1><p>Configure replay length, shortcuts, and the built-in recording engine.</p></div>
-            <section class="settings-section">
-              <div class="settings-section-title"><h2>Clipping</h2></div>
-              <div class="settings-block">
-                <label class="settings-row" for="clip-length"><span><strong>Clip length</strong><small>How many seconds of the replay buffer to save.</small></span><span class="control-with-unit"><input id="clip-length" name="clipLengthSeconds" type="number" min="5" max="3600" inputmode="numeric"><em>sec</em></span></label>
-                <label class="settings-row" for="instant-replay"><span><strong>Instant replay while idle</strong><small>When full recording is off, keep a separate rolling window so the same Save clip button and shortcut can recover a recent moment. Off by default.</small></span><input id="instant-replay" name="instantReplay" type="checkbox" role="switch"></label>
-                <label class="settings-row" for="instant-replay-length"><span><strong>Idle replay length</strong><small>How much history the idle instant replay keeps. This does not change normal recording clips.</small></span><span class="control-with-unit"><input id="instant-replay-length" name="instantReplayLengthSeconds" type="number" min="5" max="3600" inputmode="numeric"><em>sec</em></span></label>
-                <label class="settings-row" for="hotkey"><span><strong>Clip shortcut</strong><small>Click the field, press your shortcut, then release every key to save it.</small></span><span class="shortcut-control"><span class="shortcut-input-row"><input id="hotkey" class="shortcut-capture" name="clipHotkey" readonly autocomplete="off" spellcheck="false"><button id="disable-hotkey" class="button ghost shortcut-disable" type="button">Disable</button></span><em id="shortcut-feedback">Click to remap</em></span></label>
-                <label class="settings-row" for="marker-hotkey"><span><strong>Marker shortcut</strong><small>Add a moment to the current recording timeline without saving another file.</small></span><span class="shortcut-control"><span class="shortcut-input-row"><input id="marker-hotkey" class="shortcut-capture" name="markerHotkey" readonly autocomplete="off" spellcheck="false"><button id="disable-marker-hotkey" class="button ghost shortcut-disable" type="button">Disable</button></span><em id="marker-shortcut-feedback">Click to remap</em></span></label>
-              </div>
-            </section>
-            <section class="settings-section">
-              <div class="settings-section-title"><h2>Recording profile</h2><p>Applied directly to the capture engine after saving. Stop recording before changing these.</p></div>
-              <div class="settings-block">
-                <label class="settings-row" for="recording-quality"><span><strong>Quality</strong><small>Balance image quality and file size.</small></span><select id="recording-quality" name="obsRecordingQuality"><option value="HQ">High quality</option><option value="Small">Smaller files</option><option value="Lossless">Near-lossless (very large)</option><option value="Stream">Standard quality</option></select></label>
-                <label class="settings-row" for="encoder"><span><strong>Video encoder</strong><small>Available encoders are detected from the capture engine at startup.</small></span><select id="encoder" name="obsEncoder"><option value="auto">Automatic</option></select></label>
-                <label class="settings-row" for="format"><span><strong>File format</strong><small>MKV is safest if recording is interrupted.</small></span><select id="format" name="obsFormat"><option value="mkv">MKV (recommended)</option><option value="mp4">MP4</option></select></label>
-                <label class="settings-row" for="resolution"><span><strong>Resolution</strong><small>Output resolution for recordings and replays.</small></span><select id="resolution" name="obsResolution"><option value="2560x1440">1440p</option><option value="1920x1080">1080p</option><option value="1280x720">720p</option></select></label>
-                <label class="settings-row" for="fps"><span><strong>Frame rate</strong><small>Frames captured each second.</small></span><select id="fps" name="obsFps"><option value="60">60 FPS</option><option value="30">30 FPS</option></select></label>
-                <label class="settings-row" for="microphone"><span><strong>Microphone input</strong><small>Saved as its own editable audio track in new recordings and clips.</small></span><select id="microphone" name="microphoneDeviceId"><option value="disabled">Off</option></select></label>
-                <div class="settings-row"><span><strong>Microphone test</strong><small>Record five seconds with the selected microphone and play it back locally.</small></span><button id="microphone-test" class="button outline" type="button">Test microphone</button></div>
-                <label class="settings-row" for="microphone-volume"><span><strong>Microphone volume</strong><small>Applied live to recordings and saved clips.</small></span><span class="settings-range-control"><input id="microphone-volume" name="microphoneVolumePercent" type="range" min="0" max="200" step="1"><output id="microphone-volume-value" for="microphone-volume">100%</output></span></label>
-                <label class="settings-row" for="microphone-nvidia-noise-removal"><span><strong>NVIDIA noise removal</strong><small>RTX-accelerated removal for keyboard, mouse, fan, and room noise during speech.</small></span><input id="microphone-nvidia-noise-removal" name="microphoneNvidiaNoiseRemoval" type="checkbox" role="switch"></label>
-                <label class="settings-row" for="microphone-noise-gate"><span><strong>Noise gate</strong><small>Sounds quieter than this level are not recorded.</small></span><span class="settings-range-control microphone-gate-control"><span class="microphone-level-meter" aria-label="Live microphone level"><i id="microphone-level-fill"></i><b id="microphone-gate-marker"></b></span><input id="microphone-noise-gate" name="microphoneNoiseGateDb" type="range" min="-60" max="-5" step="1"><output id="microphone-noise-gate-value" for="microphone-noise-gate">−40 dB</output></span></label>
-              </div>
-            </section>
-          </div>
-
-          <div id="settings-storage" class="settings-group" data-settings-page="storage">
-            <div class="settings-heading"><h1>Storage</h1><p>Control where footage is saved and when old files are removed.</p></div>
-            <section class="settings-section">
-              <div class="settings-section-title"><h2>Recordings</h2></div>
-              <div class="settings-block">
-                <label class="settings-row" for="folder"><span><strong>Storage folder</strong><small>Recordings, replays, and trimmed clips are saved here.</small></span><span class="path-control"><input id="folder" name="recordingsFolder" autocomplete="off"><button id="browse" class="button outline" type="button">Browse</button></span></label>
-                <label class="settings-row" for="cleanup-mode"><span><strong>Delete footage</strong><small>Choose when Clips automatically clears old recordings.</small></span><select id="cleanup-mode" name="storageCleanupMode"><option value="disk">When drive is full</option><option value="days">After a number of days</option></select></label>
-                <label id="disk-percent-row" class="settings-row" for="disk-percent"><span><strong>Drive usage limit</strong><small>Maximum percentage of the drive Clips may use.</small></span><span class="control-with-unit"><input id="disk-percent" name="maxDiskUsagePercent" type="number" min="1" max="99" inputmode="numeric"><em>%</em></span></label>
-                <label id="raw-gigabytes-row" class="settings-row" for="raw-gigabytes"><span><strong>Maximum raw footage</strong><small>Full source recordings only. Saved replays and trimmed clips do not count.</small></span><span class="control-with-unit"><input id="raw-gigabytes" name="maxRawRecordingGigabytes" type="number" min="1" max="100000" step="1" inputmode="numeric"><em>GB</em></span></label>
-                <label id="days-row" class="settings-row" for="days"><span><strong>Keep recordings for</strong><small>Retention period when time-based cleanup is selected.</small></span><span class="control-with-unit"><input id="days" name="retentionDays" type="number" min="1" max="365" inputmode="numeric"><em>days</em></span></label>
-              </div>
-            </section>
-            <section class="settings-section"><div class="settings-section-title"><h2>Storage insights</h2><p id="storage-insights-summary">Calculating library usage…</p></div><div id="storage-by-game" class="settings-block"></div></section>
-          </div>
-
-          <div id="settings-integrations" class="settings-group" data-settings-page="integrations">
-            <div class="settings-heading"><h1>Editor</h1><p>Configure the built-in video editor.</p></div>
-            <section class="settings-section">
-              <div class="settings-section-title"><h2>Video player</h2><p>MPV is included with Clips and needs no separate installation.</p></div>
-              <div class="settings-block">
-                <label class="settings-row" for="trim-bitrate"><span><strong>Trim quality</strong><small>Original copies streams; a bitrate creates a smaller H.264 clip.</small></span><select id="trim-bitrate" name="trimBitrate"><option value="original">Original quality</option><option value="6M">6 Mbps</option><option value="12M">12 Mbps</option><option value="18M">18 Mbps</option></select></label>
-              </div>
-            </section>
-          </div>
-
-          <div id="settings-advanced" class="settings-group" data-settings-page="advanced">
-            <div class="settings-heading"><h1>Advanced</h1><p>Capture-engine timing and application audio routing.</p></div>
-            <section class="settings-section">
-              <div class="settings-section-title"><h2>Capture engine</h2></div>
-              <div class="settings-block">
-                <label class="settings-row" for="desktop-window"><span><strong>Desktop window <em class="experimental-badge">Experimental</em></strong><small>Turn this off to use Clips in your browser while the app records and shows overlays in the background.</small></span><input id="desktop-window" name="desktopWindow" type="checkbox" role="switch"></label>
                 <label class="settings-row" for="delay"><span><strong>Stop delay</strong><small>Wait before stopping after the game closes.</small></span><span class="control-with-unit"><input id="delay" name="stopDelaySeconds" type="number" min="0" inputmode="numeric"><em>sec</em></span></label>
-                <div class="settings-row"><span><strong>Engine status</strong><small>Restart the private libobs host if capture becomes unavailable.</small></span><button id="connect" class="button outline" type="button">Reconnect</button></div>
               </div>
             </section>
             <section class="settings-section">
-              <div class="settings-section-title"><h2>Audio routing</h2></div>
+              <div class="settings-section-title"><h2>Monitored games</h2><p>Recording starts while any application in this list is running.</p></div>
               <div class="settings-block">
                 <div class="settings-row settings-row-stack">
-                  <div class="row-heading"><div><strong>Allowed audio applications</strong><small>Each application is saved as an editable track; the active game is always included.</small></div><button id="scan-audio" class="button outline" type="button">Add running application</button></div>
+                  <div class="row-heading"><div><strong>Games</strong><small>Executables that trigger automatic recording.</small></div><button id="scan" class="button outline" type="button">Add running game</button></div>
+                  <div id="game-list" class="game-list"></div>
+                  <div id="process-picker" class="process-picker hidden"></div>
+                </div>
+                <details id="ignored-games" class="settings-disclosure">
+                  <summary><span><strong>Ignored detections</strong><small id="ignored-game-summary">No ignored applications</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+                  <div id="ignored-game-list" class="settings-disclosure-body game-list"></div>
+                </details>
+              </div>
+            </section>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Per-game overrides</h2><p>Expand a game only when it needs different capture settings.</p></div>
+              <div id="game-profiles" class="settings-block"></div>
+            </section>
+          </div>
+
+          <div id="settings-clips" class="settings-group" data-settings-page="clips">
+            <div class="settings-heading"><h1>Clips</h1><p>Choose what the Save clip action captures and how you trigger it.</p></div>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Save clip</h2></div>
+              <div class="settings-block">
+                <label class="settings-row" for="hotkey"><span><strong>Clip shortcut</strong><small>Click the field, press your shortcut, then release every key to save it.</small></span><span class="shortcut-control"><span class="shortcut-input-row"><input id="hotkey" class="shortcut-capture" name="clipHotkey" readonly autocomplete="off" spellcheck="false"><button id="disable-hotkey" class="button ghost shortcut-disable" type="button" aria-label="Disable clip shortcut" title="Disable shortcut">&times;</button></span><em id="shortcut-feedback">Click to remap</em></span></label>
+                <label class="settings-row" for="clip-length"><span><strong>Clip length</strong><small>How many seconds of the replay buffer to save.</small></span><span class="control-with-unit"><input id="clip-length" name="clipLengthSeconds" type="number" min="5" max="3600" inputmode="numeric"><em>sec</em></span></label>
+                <label class="settings-row" for="instant-replay"><span><strong>Instant replay while idle</strong><small>When full recording is off, keep a separate rolling window so the same Save clip button and shortcut can recover a recent moment. Off by default.</small></span><input id="instant-replay" name="instantReplay" type="checkbox" role="switch"></label>
+                <label id="instant-replay-length-row" class="settings-row" for="instant-replay-length"><span><strong>Idle replay length</strong><small>How much history the idle instant replay keeps. This does not change normal recording clips.</small></span><span class="control-with-unit"><input id="instant-replay-length" name="instantReplayLengthSeconds" type="number" min="5" max="3600" inputmode="numeric"><em>sec</em></span></label>
+              </div>
+            </section>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Timeline markers</h2><p>Mark moments in a full recording without saving another file.</p></div>
+              <div class="settings-block">
+                <label class="settings-row" for="marker-hotkey"><span><strong>Marker shortcut</strong><small>Add a moment to the current recording timeline without saving another file.</small></span><span class="shortcut-control"><span class="shortcut-input-row"><input id="marker-hotkey" class="shortcut-capture" name="markerHotkey" readonly autocomplete="off" spellcheck="false"><button id="disable-marker-hotkey" class="button ghost shortcut-disable" type="button" aria-label="Disable marker shortcut" title="Disable shortcut">&times;</button></span><em id="marker-shortcut-feedback">Click to remap</em></span></label>
+              </div>
+            </section>
+          </div>
+
+          <div id="settings-video" class="settings-group" data-settings-page="video">
+            <div class="settings-heading"><h1>Video</h1><p>Balance recording clarity, performance, and file size.</p></div>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Recording quality</h2><p>These settings apply to recordings and saved replays.</p></div>
+              <div class="settings-block">
+                <label class="settings-row" for="recording-quality"><span><strong>Quality</strong><small>Balance image quality and file size.</small></span><select id="recording-quality" name="obsRecordingQuality"><option value="HQ">High quality</option><option value="Small">Smaller files</option><option value="Lossless">Near-lossless (very large)</option><option value="Stream">Standard quality</option></select></label>
+                <label class="settings-row" for="resolution"><span><strong>Resolution</strong><small>Output resolution for recordings and replays.</small></span><select id="resolution" name="obsResolution"><option value="2560x1440">1440p</option><option value="1920x1080">1080p</option><option value="1280x720">720p</option></select></label>
+                <label class="settings-row" for="fps"><span><strong>Frame rate</strong><small>Frames captured each second.</small></span><select id="fps" name="obsFps"><option value="60">60 FPS</option><option value="30">30 FPS</option></select></label>
+                <details class="settings-disclosure">
+                  <summary><span><strong>Advanced video settings</strong><small>Encoder and recording file format</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+                  <div class="settings-disclosure-body">
+                    <label class="settings-row" for="encoder"><span><strong>Video encoder</strong><small>Automatic chooses the best available hardware encoder.</small></span><select id="encoder" name="obsEncoder"><option value="auto">Automatic</option></select></label>
+                    <label class="settings-row" for="format"><span><strong>File format</strong><small>MKV is safest if recording is interrupted.</small></span><select id="format" name="obsFormat"><option value="mkv">MKV (recommended)</option><option value="mp4">MP4</option></select></label>
+                  </div>
+                </details>
+              </div>
+            </section>
+          </div>
+
+          <div id="settings-audio" class="settings-group" data-settings-page="audio">
+            <div class="settings-heading"><h1>Audio</h1><p>Choose microphone and application audio tracks for new recordings.</p></div>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Microphone</h2><p>Saved as its own editable track in new recordings and clips.</p></div>
+              <div class="settings-block">
+                <label class="settings-row" for="microphone"><span><strong>Microphone input</strong><small>Saved as its own editable audio track in new recordings and clips.</small></span><select id="microphone" name="microphoneDeviceId"><option value="disabled">Off</option></select></label>
+                <div id="microphone-test-row" class="settings-row"><span><strong>Microphone test</strong><small>Record five seconds with the selected microphone and play it back locally.</small></span><button id="microphone-test" class="button outline" type="button">Test microphone</button></div>
+                <label id="microphone-volume-row" class="settings-row" for="microphone-volume"><span><strong>Microphone volume</strong><small>Applied live to recordings and saved clips.</small></span><span class="settings-range-control"><input id="microphone-volume" name="microphoneVolumePercent" type="range" min="0" max="200" step="1"><output id="microphone-volume-value" for="microphone-volume">100%</output></span></label>
+                <details id="microphone-processing" class="settings-disclosure">
+                  <summary><span><strong>Microphone processing</strong><small>Noise removal and noise gate</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+                  <div class="settings-disclosure-body">
+                    <label class="settings-row" for="microphone-nvidia-noise-removal"><span><strong>NVIDIA noise removal</strong><small>RTX-accelerated removal for keyboard, mouse, fan, and room noise during speech.</small></span><input id="microphone-nvidia-noise-removal" name="microphoneNvidiaNoiseRemoval" type="checkbox" role="switch"></label>
+                    <label class="settings-row" for="microphone-noise-gate"><span><strong>Noise gate</strong><small>Sounds quieter than this level are not recorded.</small></span><span class="settings-range-control microphone-gate-control"><span class="microphone-level-meter" aria-label="Live microphone level"><i id="microphone-level-fill"></i><b id="microphone-gate-marker"></b></span><input id="microphone-noise-gate" name="microphoneNoiseGateDb" type="range" min="-60" max="-5" step="1"><output id="microphone-noise-gate-value" for="microphone-noise-gate">−40 dB</output></span></label>
+                  </div>
+                </details>
+              </div>
+            </section>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Application audio</h2><p>The active game is always included as an editable track.</p></div>
+              <div class="settings-block">
+                <div class="settings-row settings-row-stack">
+                  <div class="row-heading"><div><strong>Additional applications</strong><small>Add voice chat, music, or other running applications.</small></div><button id="scan-audio" class="button outline" type="button">Add application</button></div>
                   <div id="audio-application-list" class="game-list"></div>
                   <div id="audio-process-picker" class="process-picker hidden"></div>
                 </div>
@@ -248,8 +250,64 @@
             </section>
           </div>
 
+          <div id="settings-storage" class="settings-group" data-settings-page="storage">
+            <div class="settings-heading"><h1>Storage</h1><p>Control where footage is saved and when old files are removed.</p></div>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Storage status</h2></div>
+              <div class="storage-summary-card"><strong>Library usage</strong><p id="storage-insights-summary">Calculating library usage…</p></div>
+              <details class="settings-disclosure standalone-disclosure">
+                <summary><span><strong>Usage by game</strong><small>See which recordings use the most space</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+                <div id="storage-by-game" class="settings-disclosure-body"></div>
+              </details>
+            </section>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Cleanup</h2><p>Automatically remove old source recordings before they fill the drive.</p></div>
+              <div class="settings-block">
+                <label class="settings-row" for="cleanup-mode"><span><strong>Delete footage</strong><small>Choose when Clips automatically clears old recordings.</small></span><select id="cleanup-mode" name="storageCleanupMode"><option value="disk">When drive is full</option><option value="days">After a number of days</option></select></label>
+                <label id="disk-percent-row" class="settings-row" for="disk-percent"><span><strong>Drive usage limit</strong><small>Maximum percentage of the drive Clips may use.</small></span><span class="control-with-unit"><input id="disk-percent" name="maxDiskUsagePercent" type="number" min="1" max="99" inputmode="numeric"><em>%</em></span></label>
+                <label id="raw-gigabytes-row" class="settings-row" for="raw-gigabytes"><span><strong>Maximum raw footage</strong><small>Full source recordings only. Saved replays and trimmed clips do not count.</small></span><span class="control-with-unit"><input id="raw-gigabytes" name="maxRawRecordingGigabytes" type="number" min="1" max="100000" step="1" inputmode="numeric"><em>GB</em></span></label>
+                <label id="days-row" class="settings-row" for="days"><span><strong>Keep recordings for</strong><small>Retention period when time-based cleanup is selected.</small></span><span class="control-with-unit"><input id="days" name="retentionDays" type="number" min="1" max="365" inputmode="numeric"><em>days</em></span></label>
+              </div>
+            </section>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Location</h2></div>
+              <div class="settings-block">
+                <label class="settings-row" for="folder"><span><strong>Storage folder</strong><small>Recordings, replays, and trimmed clips are saved here.</small></span><span class="path-control"><input id="folder" name="recordingsFolder" autocomplete="off"><button id="browse" class="button outline" type="button">Browse</button></span></label>
+              </div>
+            </section>
+          </div>
+
+          <div id="settings-advanced" class="settings-group" data-settings-page="advanced">
+            <div class="settings-heading"><h1>Advanced</h1><p>Experimental interface options and troubleshooting tools.</p></div>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Interface</h2></div>
+              <div class="settings-block">
+                <label class="settings-row" for="desktop-window"><span><strong>Desktop window <em class="experimental-badge">Experimental</em></strong><small>Turn this off to use Clips in your browser while the app records and shows overlays in the background.</small></span><input id="desktop-window" name="desktopWindow" type="checkbox" role="switch"></label>
+              </div>
+            </section>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>Troubleshooting</h2><p>Use these tools when recording or updates stop working.</p></div>
+              <details id="troubleshooting" class="settings-disclosure standalone-disclosure">
+                <summary><span><strong>Diagnostic tools</strong><small>Capture engine, logs, and updater events</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+                <div class="settings-disclosure-body">
+                  <div class="settings-row"><span><strong>Capture engine</strong><small>Restart the private recording engine if capture becomes unavailable.</small></span><button id="connect" class="button outline" type="button">Reconnect</button></div>
+                  <div class="settings-row"><span><strong>Diagnostic log</strong><small>Stored locally for one hour and capped at 5 MB.</small></span><button id="open-logs" class="button outline" type="button">Show log file</button></div>
+                  <div class="settings-row"><span><strong>Update diagnostics</strong><small>Copy detailed, sanitized updater events for troubleshooting.</small></span><button id="copy-update-diagnostics" class="button outline" type="button">Copy diagnostics</button></div>
+                </div>
+              </details>
+            </section>
+          </div>
+
           <div id="settings-about" class="settings-group" data-settings-page="about">
-            <div class="settings-heading"><h1>About Clips</h1><p>Privacy, updates, diagnostics, and release information.</p></div>
+            <div class="settings-heading"><h1>About Clips</h1><p>Updates, privacy, and release information.</p></div>
+            <section class="settings-section">
+              <div class="settings-section-title"><h2>App &amp; updates</h2></div>
+              <div class="settings-block">
+                <div class="settings-row"><span><strong>Version</strong><small>The installed application release.</small></span><span id="about-version" class="about-value">—</span></div>
+                <div class="settings-row"><span><strong>Update status</strong><small id="about-update-status" role="status" aria-live="polite">Updates are checked automatically.</small></span><button id="check-updates" class="button outline" type="button">Check now</button></div>
+                <label class="settings-row" for="nightly-updates"><span><strong>Nightly updates</strong><small>Receive frequent development builds. These may be less stable.</small></span><input id="nightly-updates" name="nightlyUpdates" type="checkbox" role="switch"></label>
+              </div>
+            </section>
             <section id="about-privacy" class="settings-section about-privacy-section">
               <div class="settings-section-title"><h2>Privacy &amp; data</h2><p>Your recordings belong to you.</p></div>
               <div class="about-privacy-card">
@@ -261,20 +319,10 @@
               </div>
             </section>
             <section class="settings-section">
-              <div class="settings-section-title"><h2>App &amp; updates</h2><p>Installed components, release channel, and local diagnostics.</p></div>
-              <div class="settings-block">
-                <div class="settings-row"><span><strong>Version</strong><small>The installed application release.</small></span><span id="about-version" class="about-value">—</span></div>
-                <div class="settings-row"><span><strong>Build time</strong><small>When this release package was created.</small></span><span id="about-build-time" class="about-value">—</span></div>
-                <div class="settings-row"><span><strong>Media runtime</strong><small>libobs, FFmpeg, and MPV shared across app updates.</small></span><span id="about-runtime" class="about-value">—</span></div>
-                <label class="settings-row" for="nightly-updates"><span><strong>Nightly updates</strong><small>Receive frequent development builds. These may be less stable.</small></span><input id="nightly-updates" name="nightlyUpdates" type="checkbox" role="switch"></label>
-                <div class="settings-row"><span><strong>Update status</strong><small id="about-update-status" role="status" aria-live="polite">Updates are checked automatically.</small></span><button id="check-updates" class="button outline" type="button">Check now</button></div>
-                <div class="settings-row"><span><strong>Diagnostic log</strong><small>Stored locally for one hour and capped at 5 MB.</small></span><button id="open-logs" class="button outline" type="button">Show log file</button></div>
-                <div class="settings-row"><span><strong>Update diagnostics</strong><small>Copy detailed, sanitized updater events for troubleshooting.</small></span><button id="copy-update-diagnostics" class="button outline" type="button">Copy diagnostics</button></div>
-              </div>
-            </section>
-            <section class="settings-section">
-              <div class="settings-section-title"><h2>What&rsquo;s new</h2><p>Newest releases appear first.</p></div>
-              <div id="changelog" class="changelog" aria-label="Release history"></div>
+              <div class="settings-section-title"><h2>Latest release</h2></div>
+              <div id="changelog" class="changelog" aria-label="Latest release"></div>
+              <button id="release-history-toggle" class="button outline release-history-toggle hidden" type="button" aria-expanded="false" aria-controls="release-history">View release history</button>
+              <div id="release-history" class="changelog release-history hidden" aria-label="Earlier releases"></div>
             </section>
           </div>
         </div>

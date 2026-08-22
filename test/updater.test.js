@@ -325,11 +325,13 @@ test('update archives download over parallel byte ranges', async t => {
   const archive = path.join(temporary, 'update.zip');
   const source = Buffer.from('a fast update delivered in several independently verified pieces');
   const requestedRanges = [];
+  const diagnostics = [];
   t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 
   await downloadUpdateArchive('https://updates.example/update.zip', archive, source.length, () => {}, {
     streams: 4,
     minimumPartSize: 8,
+    onDiagnostic: (level, event, details) => diagnostics.push({ level, event, details }),
     fetchImpl: async (_url, options) => {
       requestedRanges.push(options.headers.Range);
       const match = /^bytes=(\d+)-(\d+)$/.exec(options.headers.Range);
@@ -344,27 +346,121 @@ test('update archives download over parallel byte ranges', async t => {
 
   assert.equal(requestedRanges.length, 4);
   assert.deepEqual(fs.readFileSync(archive), source);
+  assert.deepEqual(diagnostics[0], {
+    level: 'info',
+    event: 'mode selected',
+    details: { mode: 'parallel', streams: 4, maximumAttemptsPerRange: 3 }
+  });
+});
+
+test('parallel update downloads retry only a failed range', async t => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'clips-download-retry-'));
+  const archive = path.join(temporary, 'update.zip');
+  const source = Buffer.from('a fast update whose first range is briefly cut short in transit');
+  const requests = new Map();
+  const progress = [];
+  const diagnostics = [];
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+
+  await downloadUpdateArchive('https://updates.example/update.zip', archive, source.length, received => progress.push(received), {
+    streams: 4,
+    minimumPartSize: 8,
+    rangeRetryDelayMs: 0,
+    onDiagnostic: (level, event, details) => diagnostics.push({ level, event, details }),
+    fetchImpl: async (_url, options) => {
+      const requestedRange = options.headers.Range;
+      const count = (requests.get(requestedRange) || 0) + 1;
+      requests.set(requestedRange, count);
+      const match = /^bytes=(\d+)-(\d+)$/.exec(requestedRange);
+      const start = Number(match[1]);
+      const end = Number(match[2]);
+      const body = requestedRange === 'bytes=0-15' && count === 1
+        ? source.subarray(start, end)
+        : source.subarray(start, end + 1);
+      return new Response(body, {
+        status: 206,
+        headers: { 'Content-Range': `bytes ${start}-${end}/${source.length}` }
+      });
+    }
+  });
+
+  assert.equal(requests.get('bytes=0-15'), 2);
+  assert.deepEqual([...requests.values()].sort(), [1, 1, 1, 2]);
+  assert.equal(progress.at(-1), source.length);
+  assert.deepEqual(fs.readFileSync(archive), source);
+  assert.equal(diagnostics.some(entry => entry.event === 'range retry scheduled'
+    && entry.details.range.start === 0
+    && /incomplete/.test(entry.details.message)), true);
+  assert.equal(diagnostics.some(entry => entry.event === 'range retry succeeded'
+    && entry.details.range.start === 0), true);
 });
 
 test('update archive download falls back when byte ranges are unsupported', async t => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'clips-download-fallback-'));
   const archive = path.join(temporary, 'update.zip');
   const source = Buffer.from('a complete update from an older server');
+  const diagnostics = [];
+  let rangeRequests = 0;
   let fullRequests = 0;
   t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 
   await downloadUpdateArchive('https://updates.example/update.zip', archive, source.length, () => {}, {
     streams: 4,
     minimumPartSize: 8,
+    rangeRetries: 1,
+    rangeRetryDelayMs: 0,
+    onDiagnostic: (level, event, details) => diagnostics.push({ level, event, details }),
     fetchImpl: async (_url, options) => {
-      if (options.headers.Range) return new Response(source, { status: 200 });
+      if (options.headers.Range) {
+        rangeRequests += 1;
+        return new Response(source, { status: 200 });
+      }
       fullRequests += 1;
       return new Response(source, { status: 200 });
     }
   });
 
+  assert.equal(rangeRequests >= 2, true);
   assert.equal(fullRequests, 1);
   assert.deepEqual(fs.readFileSync(archive), source);
+  assert.equal(diagnostics.some(entry => entry.event === 'fallback to single stream'
+    && entry.details.status === 200
+    && /ignored/.test(entry.details.reason)), true);
+});
+
+test('invalid range responses are retried without silently falling back', async t => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'clips-download-invalid-range-'));
+  const archive = path.join(temporary, 'update.zip');
+  const source = Buffer.from('an update served with invalid range metadata');
+  const diagnostics = [];
+  let rangeRequests = 0;
+  let fullRequests = 0;
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+
+  await assert.rejects(downloadUpdateArchive('https://updates.example/update.zip', archive, source.length, () => {}, {
+    streams: 4,
+    minimumPartSize: 8,
+    rangeRetries: 1,
+    rangeRetryDelayMs: 0,
+    onDiagnostic: (level, event, details) => diagnostics.push({ level, event, details }),
+    fetchImpl: async (_url, options) => {
+      if (!options.headers.Range) {
+        fullRequests += 1;
+        return new Response(source, { status: 200 });
+      }
+      rangeRequests += 1;
+      return new Response(source.subarray(0, 1), {
+        status: 206,
+        headers: { 'Content-Range': `bytes 0-0/${source.length}` }
+      });
+    }
+  }), /invalid Content-Range/);
+
+  assert.equal(rangeRequests >= 2, true);
+  assert.equal(fullRequests, 0);
+  assert.equal(diagnostics.some(entry => entry.event === 'range retry scheduled'
+    && /Content-Range/.test(entry.details.message)), true);
+  assert.equal(diagnostics.some(entry => entry.event === 'fallback to single stream'), false);
 });
 
 test('update requests abort stalled connections and bodies', async () => {
