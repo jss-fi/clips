@@ -3,7 +3,7 @@
     "version": "next",
     "title": "One command takes releases to the finish line",
     "changes": [
-      "Release builds now use one guarded command that checks, versions, packages, publishes, archives, and verifies every artifact before it finishes."
+      "Release builds now use one guarded, retry-safe command that checks, versions, packages, publishes, archives, and verifies every artifact before it finishes."
     ]
   },
   {

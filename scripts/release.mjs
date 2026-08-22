@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
 const { loadProjectEnv, required } = require('./env.js');
+const { verifyMetadata, verifyPackageMetadata } = require('./update-signature.js');
+const metadataFiles = ['package-lock.json', 'package.json', 'src/changelog.json'];
 
 export function parseReleaseSpec(value) {
   const match = /^(\d+)\.(\d+)(-nightly)?$/.exec(String(value || '').trim());
@@ -43,6 +46,122 @@ export function requiresFreshRuntime(files) {
     /^package(?:-lock)?\.json$/
   ];
   return files.some(file => patterns.some(pattern => pattern.test(String(file).replaceAll('\\', '/'))));
+}
+
+export function releaseBuildScripts(spec, fresh) {
+  const scripts = [];
+  if (fresh) scripts.push('dist:fresh');
+  else if (spec.channel === 'stable') scripts.push('dist:bootstrap');
+  scripts.push('dist:release');
+  return scripts;
+}
+
+export function releaseArtifactNames(version) {
+  const names = [
+    `jss-clips-update-${version}-x64.exe`,
+    `jss-clips-update-${version}-x64.exe.blockmap`,
+    `jss-clips-app-${version}-x64.zip`,
+    `jss-clips-source-${version}.zip`
+  ];
+  if (!version.includes('-')) names.push(`jss-clips-setup-${version}-x64.exe`);
+  return names;
+}
+
+async function sha512File(file) {
+  const hash = crypto.createHash('sha512');
+  for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+  return hash.digest('base64');
+}
+
+function ymlPrimaryArtifact(metadata) {
+  const version = /^version:\s*([^\r\n]+)\s*$/m.exec(metadata)?.[1]?.trim();
+  const url = /^\s*(?:-\s*)?url:\s*([^\r\n]+)\s*$/m.exec(metadata)?.[1]?.trim();
+  const sha512 = /^sha512:\s*([^\r\n]+)\s*$/m.exec(metadata)?.[1]?.trim();
+  const size = Number(/^\s*size:\s*(\d+)\s*$/m.exec(metadata)?.[1]);
+  if (!version || !url || !sha512 || !Number.isSafeInteger(size) || size <= 0) {
+    throw new Error('dist/latest.yml does not contain a complete primary artifact entry.');
+  }
+  return { version, url, sha512, size };
+}
+
+export async function validateReleaseArtifacts(dist, version, publicKey) {
+  const artifactNames = releaseArtifactNames(version);
+  for (const name of [...artifactNames, 'latest.yml', 'latest.json']) {
+    if (!fs.existsSync(path.join(dist, name))) throw new Error(`Missing release artifact: dist/${name}`);
+  }
+
+  const staged = JSON.parse(fs.readFileSync(path.join(dist, 'latest.json'), 'utf8'));
+  const appName = `jss-clips-app-${version}-x64.zip`;
+  const appPath = path.join(dist, appName);
+  if (staged.version !== version || staged.url !== appName
+      || Number(staged.size) !== fs.statSync(appPath).size
+      || staged.sha512 !== await sha512File(appPath)) {
+    throw new Error(`dist/latest.json does not match ${appName}.`);
+  }
+  if (!verifyMetadata(staged, publicKey) || !verifyPackageMetadata(staged, publicKey)) {
+    throw new Error('dist/latest.json does not have valid release signatures.');
+  }
+
+  const installerName = `jss-clips-update-${version}-x64.exe`;
+  const installerPath = path.join(dist, installerName);
+  const installer = ymlPrimaryArtifact(fs.readFileSync(path.join(dist, 'latest.yml'), 'utf8'));
+  if (installer.version !== version || installer.url !== installerName
+      || installer.size !== fs.statSync(installerPath).size
+      || installer.sha512 !== await sha512File(installerPath)) {
+    throw new Error(`dist/latest.yml does not match ${installerName}.`);
+  }
+  return [...artifactNames, 'latest.yml', 'latest.json'];
+}
+
+export async function writeReleaseManifest({ dist, manifestPath, version, commit, publicKey }) {
+  const names = await validateReleaseArtifacts(dist, version, publicKey);
+  const files = {};
+  for (const name of names) {
+    const file = path.join(dist, name);
+    files[name] = { size: fs.statSync(file).size, sha512: await sha512File(file) };
+  }
+  const manifest = { schemaVersion: 1, version, commit, files };
+  const temporary = `${manifestPath}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`);
+  fs.rmSync(manifestPath, { force: true });
+  fs.renameSync(temporary, manifestPath);
+  return manifest;
+}
+
+export async function canReuseReleaseManifest({ dist, manifestPath, version, commit, publicKey }) {
+  if (!fs.existsSync(manifestPath)) return false;
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); }
+  catch { throw new Error(`Release artifact manifest is unreadable: ${manifestPath}`); }
+  if (manifest.version !== version) return false;
+  if (manifest.schemaVersion !== 1 || manifest.commit !== commit) {
+    throw new Error(`Release artifact manifest for ${version} does not match the prepared release commit.`);
+  }
+  const names = await validateReleaseArtifacts(dist, version, publicKey);
+  if (JSON.stringify(Object.keys(manifest.files || {}).sort()) !== JSON.stringify([...names].sort())) {
+    throw new Error(`Release artifact manifest for ${version} has an unexpected file set.`);
+  }
+  for (const name of names) {
+    const file = path.join(dist, name);
+    const expected = manifest.files[name];
+    if (expected.size !== fs.statSync(file).size || expected.sha512 !== await sha512File(file)) {
+      throw new Error(`Prepared release artifact changed after it was built: dist/${name}`);
+    }
+  }
+  return true;
+}
+
+export function withFileRollback(files, action, rollbackIndex = () => {}) {
+  const snapshots = files.map(file => ({ file, contents: fs.readFileSync(file) }));
+  try {
+    return action();
+  } catch (error) {
+    let rollbackError;
+    try { rollbackIndex(); } catch (failure) { rollbackError = failure; }
+    for (const snapshot of snapshots) fs.writeFileSync(snapshot.file, snapshot.contents);
+    if (rollbackError) error.message += ` Metadata index rollback also failed: ${rollbackError.message}`;
+    throw error;
+  }
 }
 
 function commandName(name) {
@@ -173,7 +292,6 @@ function preparedSourceRef(spec, packageVersion) {
     return git(['rev-parse', '--verify', `${hash}^{commit}`]);
   }
   const changed = git(['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']).split(/\r?\n/).filter(Boolean).sort();
-  const metadataFiles = ['package-lock.json', 'package.json', 'src/changelog.json'];
   if (JSON.stringify(changed) !== JSON.stringify(metadataFiles)) {
     throw new Error('The prepared stable release commit is not a release-metadata-only commit, so its source snapshot cannot be identified safely.');
   }
@@ -231,22 +349,46 @@ async function main() {
   run('npm', ['run', 'check'], 'Running repository checks');
 
   if (state === 'pending') {
-    if (spec.channel === 'nightly') run('npm', ['run', 'version:nightly', '--', spec.base], 'Generating nightly metadata');
-    else prepareStableVersion(spec);
-    assertMetadataChanges();
-    const displayVersion = readJson('src/changelog.json')[0].version;
-    git(['add', '--', 'package.json', 'package-lock.json', 'src/changelog.json']);
-    run('git', ['commit', '-m', `Version ${spec.channel} ${displayVersion}`], `Committing ${displayVersion} release metadata`);
+    const metadataPaths = metadataFiles.map(file => path.join(root, file));
+    withFileRollback(metadataPaths, () => {
+      if (spec.channel === 'nightly') run('npm', ['run', 'version:nightly', '--', spec.base], 'Generating nightly metadata');
+      else prepareStableVersion(spec);
+      assertMetadataChanges();
+      const displayVersion = readJson('src/changelog.json')[0].version;
+      git(['add', '--', ...metadataFiles]);
+      run('git', ['commit', '-m', `Version ${spec.channel} ${displayVersion}`], `Committing ${displayVersion} release metadata`);
+    }, () => git(['restore', '--staged', '--', ...metadataFiles]));
   } else {
     console.log('[release] Release metadata already exists; resuming from the committed release snapshot.');
   }
 
   packageJson = readJson('package.json');
+  const releaseCommit = git(['rev-parse', 'HEAD']);
+  const dist = path.join(root, 'dist');
+  const manifestPath = path.join(root, '.clips-release.json');
+  const publicKey = fs.readFileSync(path.join(root, 'src', 'update-signing-public.pem'));
+  const reuseArtifacts = state === 'prepared' && await canReuseReleaseManifest({
+    dist, manifestPath, version: packageJson.version, commit: releaseCommit, publicKey
+  });
   const buildInfoPath = path.join(root, 'src', 'build-info.json');
   const originalBuildInfo = fs.readFileSync(buildInfoPath);
   try {
-    if (fresh) run('npm', ['run', 'dist:fresh'], 'Building fresh media runtime and bootstrap installer', { env });
-    run('npm', ['run', 'dist:release'], 'Building and compatibility-testing release artifacts', { env });
+    if (reuseArtifacts) {
+      console.log('[release] Reusing checksum-verified artifacts from the prepared release; no rebuild is needed.');
+    } else {
+      for (const script of releaseBuildScripts(spec, fresh)) {
+        const label = script === 'dist:fresh'
+          ? 'Building fresh media runtime and bootstrap installer'
+          : script === 'dist:bootstrap'
+            ? 'Building stable bootstrap installer'
+            : 'Building and compatibility-testing release artifacts';
+        run('npm', ['run', script], label, { env });
+      }
+      await writeReleaseManifest({
+        dist, manifestPath, version: packageJson.version, commit: releaseCommit, publicKey
+      });
+      console.log('[release] Recorded checksums for resumable publication.');
+    }
     run('powershell.exe', [
       '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'clips-worker/scripts/publish.ps1',
       '-Version', packageJson.version,

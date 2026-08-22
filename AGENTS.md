@@ -23,7 +23,7 @@ After completing an application change intended for nightly release:
 2. Commit the application changes locally. Do not push unless the user explicitly asks.
 3. Run `npm run release -- <next-major.minor>-nightly`; for example, stable `0.5` is followed by `npm run release -- 0.6-nightly`.
 
-The release command enforces the worktree gate and correct development line, checks credentials, runs `npm run check`, derives and commits the monotonically ordered nightly metadata, automatically selects ordinary or fresh runtime packaging, builds and compatibility-tests the release, publishes it, and waits until R2, CDN, and GitHub verification finish. It handles retention cleanup without blocking a verified current release on an unrelated older archive. If it fails, fix the reported issue and rerun the same command; prepared release metadata is resumed. It never pushes branch commits. Do not duplicate the command's build, publication, or public-verification steps unless it reports a failure that specifically requires lower-level diagnosis.
+The release command enforces the worktree gate and correct development line, checks credentials, runs `npm run check`, derives and commits the monotonically ordered nightly metadata, automatically selects ordinary or fresh runtime packaging, builds and compatibility-tests the release, publishes it, and waits until R2, CDN, and GitHub verification finish. It handles retention cleanup without blocking a verified current release on an unrelated older archive. If it fails, fix the reported issue and rerun the same command; failed metadata commits are rolled back, while prepared releases reuse only the exact checksum-verified artifacts recorded after the original build. It never pushes branch commits. Do not duplicate the command's build, publication, or public-verification steps unless it reports a failure that specifically requires lower-level diagnosis.
 
 ### Stable release
 
@@ -33,7 +33,7 @@ Only publish stable when the user explicitly approves that specific promotion. F
 2. Commit the application changes locally with the first changelog entry still set to `"version": "next"`. Do not push unless explicitly asked.
 3. Run `npm run release -- <major.minor>`; for example, `npm run release -- 0.6`.
 
-The same guarded command sets the internal patch-zero SemVer, commits stable release metadata, builds with the appropriate ordinary/fresh path, publishes the stable baseline to both channels, and verifies both metadata feeds and every referenced artifact. It never pushes branch commits.
+The same guarded command sets the internal patch-zero SemVer, commits stable release metadata, always builds the full setup installer (restaging the media runtime only when needed), publishes the stable baseline to both channels, and verifies both metadata feeds and every referenced artifact. It never pushes branch commits.
 
 Subject to the worktree release gate above, never finish an application-change task in the primary `main` worktree with only source edits unless the user explicitly says not to rebuild or not to publish.
 
