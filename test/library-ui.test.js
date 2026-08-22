@@ -55,14 +55,35 @@ test('unchanged recording collections do not rebuild the library DOM', () => {
 });
 
 test('recording mutations reuse the state snapshot they broadcast', () => {
-  assert.match(main, /async function broadcast\(currentState = null\)/);
-  assert.match(main, /async function setRecordingFavorite[\s\S]*?return broadcast\(\);/);
-  assert.match(main, /async function deleteRecordings[\s\S]*?return broadcast\(\);/);
-  assert.match(main, /async function saveClip[\s\S]*?return broadcast\(\);/);
-  assert.match(main, /async function mixRecordingAction[\s\S]*?state: await broadcast\(\)/);
+  assert.match(main, /async function broadcast\(currentState = null, \{ force = false \} = \{\}\)/);
+  assert.match(main, /async function setRecordingFavorite[\s\S]*?return broadcast\(null, \{ force: true \}\);/);
+  assert.match(main, /async function deleteRecordings[\s\S]*?return broadcast\(null, \{ force: true \}\);/);
+  assert.match(main, /async function saveClip[\s\S]*?return broadcast\(null, \{ force: true \}\);/);
+  assert.match(main, /async function mixRecordingAction[\s\S]*?state: await broadcast\(null, \{ force: true \}\)/);
   assert.match(main, /ipcMain\.handle\('clip:save', saveClip\)/);
 });
 
 test('stitching clears cached selection state with a forced library refresh', () => {
   assert.match(renderer, /selectedRecordingPaths\.clear\(\); render\(result\.state, false, true\);/);
+});
+
+test('large archives render in bounded batches with an explicit continuation', () => {
+  assert.match(html, /id="archive-load-more"/);
+  assert.match(renderer, /const ARCHIVE_PAGE_SIZE = 120/);
+  assert.match(renderer, /archiveItems\.slice\(0, archiveVisibleCount\)/);
+  assert.match(renderer, /archiveVisibleCount \+= ARCHIVE_PAGE_SIZE/);
+  assert.match(css, /\.archive-day\s*\{[^}]*content-visibility:\s*auto/);
+});
+
+test('thumbnail loading uses native hints and a bounded renderer cache', () => {
+  assert.match(renderer, /loading="lazy" decoding="async"/);
+  assert.match(renderer, /const THUMBNAIL_CACHE_LIMIT = 160/);
+  assert.match(renderer, /while \(thumbnailCache\.size > THUMBNAIL_CACHE_LIMIT\)/);
+  assert.doesNotMatch(renderer, /document\.querySelectorAll\("\.recording-thumbnail\[data-thumbnail-path\]"\)\.forEach\(\(current\)/);
+});
+
+test('background broadcasts avoid full library snapshots without a visible client', () => {
+  assert.match(main, /function hasVisibleStateConsumer\(\)/);
+  assert.match(main, /!force && !hasVisibleStateConsumer\(\)/);
+  assert.match(main, /broadcast\(null, \{ force: true \}\)/);
 });

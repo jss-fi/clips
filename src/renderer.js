@@ -14,6 +14,9 @@ let mixerLoadedPath = "";
 let liveMixTimer = null;
 let libraryQuery = "";
 let librarySort = "newest";
+const ARCHIVE_PAGE_SIZE = 120;
+const THUMBNAIL_CACHE_LIMIT = 160;
+let archiveVisibleCount = ARCHIVE_PAGE_SIZE;
 let renderedSettingsJson = "";
 let renderedLibraryJson = "";
 const shortTimeFormatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
@@ -35,6 +38,13 @@ const playerIcons = {
 };
 const thumbnailCache = new Map();
 const recentDetailElements = new Map();
+function cacheThumbnail(filePath, thumbnail) {
+  thumbnailCache.delete(filePath);
+  thumbnailCache.set(filePath, thumbnail);
+  while (thumbnailCache.size > THUMBNAIL_CACHE_LIMIT) {
+    thumbnailCache.delete(thumbnailCache.keys().next().value);
+  }
+}
 const selectedRecordingPaths = new Set();
 let pendingDeletePaths = [];
 const thumbnailObserver = new IntersectionObserver((entries) => {
@@ -295,7 +305,7 @@ function render(s, fill = false, refreshLibrary = false) {
     ? items.map((recording) => {
         const favoriteLabel = recording.favorite ? "Remove from favorites" : "Add to favorites";
         const selected = selectedRecordingPaths.has(recording.path);
-        return `<article class="recording-card${recording.favorite ? " favorite" : ""}${selected ? " selected" : ""}"><button class="recording-open" data-recording-path="${escapeHtml(recording.path)}" data-recording-name="${escapeHtml(recording.title || recording.name)}" aria-label="Play ${escapeHtml(recording.title || recording.name)}"><span class="recording-preview"><img class="recording-thumbnail" data-thumbnail-path="${escapeHtml(recording.path)}" alt=""><i class="recording-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"/></svg></i><i class="recording-play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"/></svg></i></span><span class="recording-meta"><strong title="${escapeHtml(recording.title || recording.name)}">${escapeHtml(recording.title || recording.name)}</strong><span data-recording-details-path="${escapeHtml(recording.path)}">${escapeHtml(recordingDetails(recording))}</span></span></button><button class="recording-select" data-select-path="${escapeHtml(recording.path)}" aria-pressed="${selected}" aria-label="${selected ? "Deselect" : "Select"} ${escapeHtml(recording.name)}" title="${selected ? "Deselect" : "Select"}"><i></i></button><button class="recording-favorite" data-favorite-path="${escapeHtml(recording.path)}" data-favorite="${recording.favorite ? "true" : "false"}" aria-label="${favoriteLabel}" title="${favoriteLabel}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/></svg></button><div class="recording-actions"><button class="recording-delete" data-delete-path="${escapeHtml(recording.path)}" data-delete-name="${escapeHtml(recording.name)}" aria-label="Delete ${escapeHtml(recording.name)}" title="Delete"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5"/></svg></button></div></article>`;
+        return `<article class="recording-card${recording.favorite ? " favorite" : ""}${selected ? " selected" : ""}"><button class="recording-open" data-recording-path="${escapeHtml(recording.path)}" data-recording-name="${escapeHtml(recording.title || recording.name)}" aria-label="Play ${escapeHtml(recording.title || recording.name)}"><span class="recording-preview"><img class="recording-thumbnail" data-thumbnail-path="${escapeHtml(recording.path)}" loading="lazy" decoding="async" alt=""><i class="recording-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"/></svg></i><i class="recording-play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"/></svg></i></span><span class="recording-meta"><strong title="${escapeHtml(recording.title || recording.name)}">${escapeHtml(recording.title || recording.name)}</strong><span data-recording-details-path="${escapeHtml(recording.path)}">${escapeHtml(recordingDetails(recording))}</span></span></button><button class="recording-select" data-select-path="${escapeHtml(recording.path)}" aria-pressed="${selected}" aria-label="${selected ? "Deselect" : "Select"} ${escapeHtml(recording.name)}" title="${selected ? "Deselect" : "Select"}"><i></i></button><button class="recording-favorite" data-favorite-path="${escapeHtml(recording.path)}" data-favorite="${recording.favorite ? "true" : "false"}" aria-label="${favoriteLabel}" title="${favoriteLabel}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/></svg></button><div class="recording-actions"><button class="recording-delete" data-delete-path="${escapeHtml(recording.path)}" data-delete-name="${escapeHtml(recording.name)}" aria-label="Delete ${escapeHtml(recording.name)}" title="Delete"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5"/></svg></button></div></article>`;
       }).join("")
     : `<div class="empty compact"><div><strong>${emptyTitle}</strong><span>${emptyDetail}</span></div></div>`;
   $("replay-count").textContent = replays.length;
@@ -309,7 +319,10 @@ function render(s, fill = false, refreshLibrary = false) {
   const archivedFavorites = archived.filter(recording => recording.favorite);
   const archivedOthers = archived.filter(recording => !recording.favorite);
   const chronological = librarySort === "newest" || librarySort === "oldest";
-  const groupedItems = (chronological ? archivedOthers : archived).reduce((groups, recording) => {
+  const visibleFavorites = archivedFavorites.slice(0, archiveVisibleCount);
+  const archiveItems = chronological ? archivedOthers : archived;
+  const visibleArchiveItems = archiveItems.slice(0, archiveVisibleCount);
+  const groupedItems = visibleArchiveItems.reduce((groups, recording) => {
     const key = chronological ? recording.day
       : librarySort === "game" ? (recording.game || "Older recordings (game unknown)")
       : "Largest files";
@@ -318,7 +331,7 @@ function render(s, fill = false, refreshLibrary = false) {
   }, {});
   $("archive-favorite-count").textContent = archivedFavorites.length;
   $("archive-favorites-section").classList.toggle("hidden", !chronological || !archivedFavorites.length);
-  $("archive-favorite-list").innerHTML = renderFiles(archivedFavorites, "", "");
+  $("archive-favorite-list").innerHTML = renderFiles(visibleFavorites, "", "");
   $("archive-summary").textContent = archived.length
     ? librarySort === "size" ? `${archived.length} saved item${archived.length === 1 ? "" : "s"}, ranked by file size.`
     : librarySort === "game" ? `${archived.length} saved item${archived.length === 1 ? "" : "s"}, grouped by game.`
@@ -332,6 +345,12 @@ function render(s, fill = false, refreshLibrary = false) {
         return `<section class="archive-day"><div class="group-title"><h3>${escapeHtml(heading)}</h3><span>${items.length}</span></div><div class="recording-list">${renderFiles(items, "", "")}</div></section>`;
       }).join("")
     : '<div class="empty archive-empty"><div><strong>No previous days yet</strong><span>Older recordings will appear here, grouped by day.</span></div></div>';
+  const renderedArchiveCount = visibleArchiveItems.length + (chronological ? visibleFavorites.length : 0);
+  const remainingArchiveCount = Math.max(0, archived.length - renderedArchiveCount);
+  $("archive-load-more").classList.toggle("hidden", !remainingArchiveCount);
+  $("archive-load-more").textContent = remainingArchiveCount
+    ? `Show ${Math.min(ARCHIVE_PAGE_SIZE, remainingArchiveCount)} more`
+    : "All recordings shown";
   loadRecordingThumbnails();
   updateSelectionBar();
   recentDetailElements.clear();
@@ -438,12 +457,10 @@ function requestRecordingThumbnail(image) {
   const filePath = image.dataset.thumbnailPath;
   window.clips.getRecordingThumbnail(filePath).then((thumbnail) => {
     if (!thumbnail) return;
-    thumbnailCache.set(filePath, thumbnail);
-    document.querySelectorAll(".recording-thumbnail[data-thumbnail-path]").forEach((current) => {
-      if (current.dataset.thumbnailPath !== filePath) return;
-      current.src = thumbnail;
-      current.classList.add("loaded");
-    });
+    cacheThumbnail(filePath, thumbnail);
+    if (!image.isConnected || image.dataset.thumbnailPath !== filePath) return;
+    image.src = thumbnail;
+    image.classList.add("loaded");
   }).catch(() => {});
 }
 const escapeHtml = (s) =>
@@ -780,8 +797,20 @@ $("record").onclick = async () => render(await window.clips.toggleRecording());
 $("clip").onclick = async () => render(await window.clips.saveClip());
 $("library-folder").onclick = () => window.clips.openFolder();
 $("archive-folder").onclick = () => window.clips.openLibraryFolder();
-$("library-search").oninput = event => { libraryQuery = event.currentTarget.value.trim(); render(state, false, true); };
-$("library-sort").onchange = event => { librarySort = event.currentTarget.value; render(state, false, true); };
+$("library-search").oninput = event => {
+  libraryQuery = event.currentTarget.value.trim();
+  archiveVisibleCount = ARCHIVE_PAGE_SIZE;
+  render(state, false, true);
+};
+$("library-sort").onchange = event => {
+  librarySort = event.currentTarget.value;
+  archiveVisibleCount = ARCHIVE_PAGE_SIZE;
+  render(state, false, true);
+};
+$("archive-load-more").onclick = () => {
+  archiveVisibleCount += ARCHIVE_PAGE_SIZE;
+  render(state, false, true);
+};
 document.addEventListener("dblclick", async event => {
   const title = event.target.closest(".recording-meta strong");
   const card = title?.closest(".recording-card");

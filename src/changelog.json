@@ -3,7 +3,8 @@
     "version": "next",
     "title": "Smoother large libraries",
     "changes": [
-      "Routine recorder updates no longer rebuild an unchanged clip library, keeping controls responsive as the collection grows."
+      "Routine recorder updates no longer rebuild an unchanged clip library, keeping controls responsive as the collection grows.",
+      "Large archives now load in manageable batches, use bounded thumbnail memory, and avoid library scans while no interface is visible."
     ]
   },
   {
