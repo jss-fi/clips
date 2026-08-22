@@ -51,6 +51,18 @@ test('stable releases always build a setup installer without unnecessarily resta
   assert.ok(workflow.releaseArtifactNames('0.7.0').includes('jss-clips-setup-0.7.0-x64.exe'));
 });
 
+test('an explicit fresh build cannot be silently replaced by prepared artifact reuse', () => {
+  assert.equal(workflow.shouldReusePreparedArtifacts({
+    prepared: true, reusable: true, forceFresh: false, version: '0.7.0-nightly.n000001.aaaaaaaa'
+  }), true);
+  assert.throws(() => workflow.shouldReusePreparedArtifacts({
+    prepared: true, reusable: true, forceFresh: true, version: '0.7.0-nightly.n000001.aaaaaaaa'
+  }), /Rerun without --fresh.*new release\/version/);
+  assert.equal(workflow.shouldReusePreparedArtifacts({
+    prepared: true, reusable: false, forceFresh: true, version: '0.7.0-nightly.n000001.aaaaaaaa'
+  }), false);
+});
+
 test('metadata preparation restores files and the index callback when commit work fails', () => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'clips-release-rollback-'));
   const first = path.join(temporary, 'package.json');

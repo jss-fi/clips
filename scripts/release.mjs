@@ -56,6 +56,13 @@ export function releaseBuildScripts(spec, fresh) {
   return scripts;
 }
 
+export function shouldReusePreparedArtifacts({ prepared, reusable, forceFresh, version }) {
+  if (prepared && reusable && forceFresh) {
+    throw new Error(`Cannot apply --fresh to prepared release ${version}: its checksum-verified artifacts may already be uploaded. Rerun without --fresh to publish the recorded artifacts, or prepare a new release/version for a fresh runtime build.`);
+  }
+  return prepared && reusable;
+}
+
 export function releaseArtifactNames(version) {
   const names = [
     `jss-clips-update-${version}-x64.exe`,
@@ -341,7 +348,8 @@ async function main() {
   validateReleaseLine(spec, changelog);
   const sourceRef = state === 'prepared' ? preparedSourceRef(spec, packageJson.version) : git(['rev-parse', 'HEAD']);
   const build = changedFilesForSource(sourceRef);
-  const fresh = args.includes('--fresh') || build.fresh;
+  const forceFresh = args.includes('--fresh');
+  const fresh = forceFresh || build.fresh;
   const env = preflightCredentials();
 
   console.log(`[release] Source snapshot ${sourceRef.slice(0, 8)}; comparing with ${build.previousTag || 'no prior tag'}.`);
@@ -367,8 +375,14 @@ async function main() {
   const dist = path.join(root, 'dist');
   const manifestPath = path.join(root, '.clips-release.json');
   const publicKey = fs.readFileSync(path.join(root, 'src', 'update-signing-public.pem'));
-  const reuseArtifacts = state === 'prepared' && await canReuseReleaseManifest({
+  const reusableArtifacts = state === 'prepared' && await canReuseReleaseManifest({
     dist, manifestPath, version: packageJson.version, commit: releaseCommit, publicKey
+  });
+  const reuseArtifacts = shouldReusePreparedArtifacts({
+    prepared: state === 'prepared',
+    reusable: reusableArtifacts,
+    forceFresh,
+    version: packageJson.version
   });
   const buildInfoPath = path.join(root, 'src', 'build-info.json');
   const originalBuildInfo = fs.readFileSync(buildInfoPath);
