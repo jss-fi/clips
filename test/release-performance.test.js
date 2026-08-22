@@ -30,6 +30,18 @@ test('release completion is marked after public verification and before archival
   assert.ok(archival > completionMarker);
 });
 
+test('independent release verification and compatibility work runs in parallel', () => {
+  const root = path.join(__dirname, '..');
+  const publicVerifier = fs.readFileSync(path.join(root, 'scripts', 'verify-public-release.mjs'), 'utf8');
+  const githubPublisher = fs.readFileSync(path.join(root, 'scripts', 'publish-github-release.mjs'), 'utf8');
+  const builder = fs.readFileSync(path.join(root, 'scripts', 'build-release.mjs'), 'utf8');
+
+  assert.match(publicVerifier, /Promise\.all\(referenced\.map\(async expected =>/);
+  assert.match(publicVerifier, /Promise\.all\(artifactNames\.map\(async name =>/);
+  assert.match(githubPublisher, /Promise\.all\(artifacts\.map\(\(name, index\) => verifyArtifact/);
+  assert.match(builder, /Promise\.all\(\[\s*run\(node, \['scripts\/test-staged-update\.js'/);
+});
+
 test('release retention keeps the newest three complete version groups', async () => {
   const { artifactVersion, releaseArtifactNames, releaseMarkerName, releaseRetentionPlan } = await import('../clips-worker/scripts/release-utils.mjs');
   const versions = [

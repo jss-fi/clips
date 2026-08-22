@@ -145,8 +145,6 @@ async function verifyArtifact(name, asset) {
   console.log(`Checksum-verified GitHub asset ${name} (${size} bytes)`);
 }
 
-for (let index = 0; index < artifacts.length; index += 1) {
-  await verifyArtifact(artifacts[index], publishedAssets[index]);
-}
+await Promise.all(artifacts.map((name, index) => verifyArtifact(name, publishedAssets[index])));
 
 console.log(`Published and verified https://github.com/${repository}/releases/tag/${tag}`);

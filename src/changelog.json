@@ -1,5 +1,12 @@
 [
   {
+    "version": "next",
+    "title": "Faster, unattended releases",
+    "changes": [
+      "Release verification and compatibility checks now run independent work in parallel, while Worker validation no longer pauses for interactive tooling prompts."
+    ]
+  },
+  {
     "version": "0.6-nightly.12",
     "title": "Update diagnostics survive restarts",
     "changes": [

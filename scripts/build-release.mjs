@@ -33,7 +33,9 @@ const stagedApplication = (async () => {
 const sourceBundle = run(node, ['scripts/build-source-bundle.js'], 'source bundle');
 
 await Promise.all([updateInstaller, stagedApplication, sourceBundle]);
-await run(node, ['scripts/test-staged-update.js'], 'staged updater integration');
-await run(node, ['scripts/test-runtime-install.js'], 'runtime install and migration integration');
-await run(node, ['scripts/test-update-compatibility.js'], 'released-client compatibility matrix');
+await Promise.all([
+  run(node, ['scripts/test-staged-update.js'], 'staged updater integration'),
+  run(node, ['scripts/test-runtime-install.js'], 'runtime install and migration integration'),
+  run(node, ['scripts/test-update-compatibility.js'], 'released-client compatibility matrix')
+]);
 console.log('[build] release artifacts complete');
