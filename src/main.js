@@ -127,8 +127,8 @@ let lastStorageCleanupAt = 0;
 async function cleanupStorageOnSchedule(force = false) {
   const now = Date.now();
   if (!force && now - lastStorageCleanupAt < STORAGE_CLEANUP_INTERVAL_MS) return;
-  lastStorageCleanupAt = now;
   await cleanupStorage();
+  lastStorageCleanupAt = Date.now();
 }
 const recentRecordings = () => recordingLibrary.recentRecordings();
 const archivedRecordings = () => recordingLibrary.archivedRecordings();
@@ -283,8 +283,8 @@ async function startSession({ recording = true, replayLengthSeconds = 0, storage
   if (recording) showOverlayToast('Recording started', 'recording');
 }
 
-async function startInstantReplay() {
-  await startSession({ recording: false, replayLengthSeconds: settings.instantReplayLengthSeconds });
+async function startInstantReplay({ storageCleanupFresh = false } = {}) {
+  await startSession({ recording: false, replayLengthSeconds: settings.instantReplayLengthSeconds, storageCleanupFresh });
 }
 async function finalizeSessionMetadata() {
   if (sessionMarkers.length || sessionGame) {
@@ -789,9 +789,9 @@ async function monitor() {
       }, settings.stopDelaySeconds * 1000);
     } else if (settings.instantReplay && !captureStatus.recording && captureStatus.replayBuffer && sessionDate && sessionDate !== todayKey()) {
       await obs.stopSession();
-      await startInstantReplay();
+      await startInstantReplay({ storageCleanupFresh: true });
     } else if (settings.instantReplay && !captureStatus.recording && !captureStatus.replayBuffer) {
-      await startInstantReplay();
+      await startInstantReplay({ storageCleanupFresh: true });
     } else if (!settings.instantReplay && !captureStatus.recording && captureStatus.replayBuffer) {
       await obs.stopSession();
       await obs.disconnect().catch(() => {});
