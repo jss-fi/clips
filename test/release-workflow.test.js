@@ -21,6 +21,23 @@ test('the next development line follows the latest stable minor', () => {
   assert.equal(workflow.nextDevelopmentLine('2.19'), '2.20');
 });
 
+test('Windows npm subprocesses run through the npm JavaScript CLI', () => {
+  const invocation = workflow.commandInvocation('npm', ['run', 'check'], {
+    platform: 'win32',
+    env: { npm_execpath: 'C:\\npm\\npm-cli.js' }
+  });
+  assert.equal(invocation.command, process.execPath);
+  assert.deepEqual(invocation.args, ['C:\\npm\\npm-cli.js', 'run', 'check']);
+  assert.throws(
+    () => workflow.commandInvocation('npm', ['run', 'check'], { platform: 'win32', env: {} }),
+    /npm_execpath is unavailable/
+  );
+  assert.deepEqual(
+    workflow.commandInvocation('git', ['status'], { platform: 'win32', env: {} }),
+    { command: 'git', args: ['status'] }
+  );
+});
+
 test('worktree porcelain parsing preserves the primary worktree and branches', () => {
   const parsed = workflow.parseWorktrees([
     'worktree G:/clips',

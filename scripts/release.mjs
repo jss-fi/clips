@@ -171,16 +171,25 @@ export function withFileRollback(files, action, rollbackIndex = () => {}) {
   }
 }
 
-function commandName(name) {
-  return process.platform === 'win32' && name === 'npm' ? 'npm.cmd' : name;
+export function commandInvocation(name, args, options = {}) {
+  const platform = options.platform || process.platform;
+  const env = options.env || process.env;
+  if (platform === 'win32' && name === 'npm') {
+    const npmCli = String(env.npm_execpath || '').trim();
+    if (!npmCli) throw new Error('npm_execpath is unavailable; start the release with npm run release.');
+    return { command: process.execPath, args: [npmCli, ...args] };
+  }
+  return { command: name, args };
 }
 
 function run(command, args, label, options = {}) {
   if (!options.quiet) console.log(`[release] ${label}`);
   const capture = Boolean(options.capture);
-  const result = spawnSync(commandName(command), args, {
+  const env = options.env || process.env;
+  const invocation = commandInvocation(command, args, { env });
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: root,
-    env: options.env || process.env,
+    env,
     input: options.input,
     encoding: capture ? 'utf8' : undefined,
     stdio: capture ? ['pipe', 'pipe', 'pipe'] : 'inherit',
