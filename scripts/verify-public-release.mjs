@@ -78,7 +78,7 @@ for (const releaseChannel of channels) {
     { url: staged.url, sha512: staged.sha512, size: Number(staged.size) },
     ymlArtifact(metadata.get('latest.yml'))
   ];
-  for (const expected of referenced) {
+  await Promise.all(referenced.map(async expected => {
     if (!artifactNames.includes(expected.url)) throw new Error(`Public metadata references an unexpected artifact: ${expected.url}`);
     const response = await fetchWithRetry(channelUrl(releaseChannel, expected.url), {
       headers: { 'Accept-Encoding': 'identity', Range: `bytes=0-${expected.size - 1}` }
@@ -86,13 +86,13 @@ for (const releaseChannel of channels) {
     if (response.status !== 200 && response.status !== 206) throw new Error(`Unexpected response for ${expected.url}: HTTP ${response.status}`);
     await verifyBody(response, expected);
     console.log(`Verified public ${releaseChannel} artifact ${expected.url}`);
-  }
+  }));
 
-  for (const name of artifactNames) {
+  await Promise.all(artifactNames.map(async name => {
     const localSize = fs.statSync(path.join(dist, name)).size;
     const response = await fetchWithRetry(channelUrl(releaseChannel, name), { method: 'HEAD' });
     const publicSize = Number(response.headers.get('content-length'));
     if (publicSize !== localSize) throw new Error(`Public artifact size mismatch for ${name}: ${publicSize} != ${localSize}`);
-  }
+  }));
   console.log(`Verified public ${releaseChannel} metadata and all ${artifactNames.length} release artifacts.`);
 }

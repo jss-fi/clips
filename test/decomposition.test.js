@@ -22,6 +22,7 @@ test('standard checks use the isolated Worker checker', () => {
   const checker = fs.readFileSync(path.join(root, 'scripts', 'check-workers.mjs'), 'utf8');
   assert.match(checker, /mkdtemp/);
   assert.match(checker, /CLIPS_HERMETIC_CHECK: '1'/);
+  assert.match(checker, /CI: '1'/);
   const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'check.yml'), 'utf8');
   assert.doesNotMatch(workflow, /^\s*push:/m);
   assert.match(workflow, /^\s*workflow_dispatch:/m);

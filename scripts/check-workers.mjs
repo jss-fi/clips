@@ -19,7 +19,7 @@ function run(script, args, options = {}) {
 }
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'clips-worker-check-'));
-const isolatedEnv = { ...process.env, XDG_CONFIG_HOME: join(temporaryRoot, '.config') };
+const isolatedEnv = { ...process.env, CI: '1', XDG_CONFIG_HOME: join(temporaryRoot, '.config') };
 try {
   await mkdir(join(temporaryRoot, 'clips-worker'), { recursive: true });
   await cp(join(projectRoot, 'clips-worker', 'src'), join(temporaryRoot, 'clips-worker', 'src'), { recursive: true });
