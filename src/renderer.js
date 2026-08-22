@@ -161,7 +161,6 @@ const values = () => ({
   gameExecutables: state.settings.gameExecutables,
   ignoredGameExecutables: state.settings.ignoredGameExecutables || [],
   gameProfiles: state.settings.gameProfiles || {},
-  trimBitrate: $("trim-bitrate").value,
   desktopWindow: $("desktop-window").checked,
   nightlyUpdates: $("nightly-updates").checked,
   telemetryMode: $("telemetry-mode").value,
@@ -199,12 +198,6 @@ function render(s, fill = false, refreshLibrary = false) {
     $("update-button").title = label;
   }
   $("about-version").textContent = `v${s.app?.version || "—"}`;
-  $("about-build-time").textContent = s.app?.buildTime
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(s.app.buildTime))
-    : "Unknown";
-  $("about-runtime").textContent = s.app?.runtimeReady
-    ? `v${s.app.runtimeVersion} · Ready`
-    : `v${s.app?.runtimeVersion || "—"} · Installing…`;
   const updateStatus = {
     checking: "Checking for updates…",
     downloading: `Downloading ${s.update?.version || "update"}… ${s.update?.percent || 0}%`,
@@ -261,13 +254,22 @@ function render(s, fill = false, refreshLibrary = false) {
         .join("")
     : '<div class="muted">No games added. Add a running game to begin.</div>';
   $("ignored-game-list").innerHTML = s.settings.ignoredGameExecutables?.length
-    ? `<div class="muted">Ignored detections</div>${s.settings.ignoredGameExecutables.map((x, i) =>
-        `<div class="chip"><span>${escapeHtml(x)}</span><button data-remove-ignored="${i}" aria-label="Detect ${escapeHtml(x)} again">&times;</button></div>`).join("")}`
+    ? s.settings.ignoredGameExecutables.map((x, i) =>
+        `<div class="chip"><span>${escapeHtml(x)}</span><button data-remove-ignored="${i}" aria-label="Detect ${escapeHtml(x)} again">&times;</button></div>`).join("")
     : "";
+  const ignoredCount = s.settings.ignoredGameExecutables?.length || 0;
+  $("ignored-game-summary").textContent = ignoredCount
+    ? `${ignoredCount} application${ignoredCount === 1 ? "" : "s"} will not trigger recording`
+    : "No ignored applications";
+  const openProfiles = new Set([...$("game-profiles").querySelectorAll("details[open]")].map(profile => profile.dataset.profileGame));
   $("game-profiles").innerHTML = s.settings.gameExecutables.length ? s.settings.gameExecutables.map(game => {
-    const key = game.toLowerCase(); const profile = s.settings.gameProfiles?.[key] || {};
-    return `<div class="settings-row game-profile" data-profile-game="${escapeHtml(key)}"><span><strong>${escapeHtml(game)}</strong><small>Blank values use the global capture profile.</small></span><span class="profile-controls"><select data-profile="quality"><option value="">Default quality</option><option value="HQ"${profile.quality === "HQ" ? " selected" : ""}>High</option><option value="Small"${profile.quality === "Small" ? " selected" : ""}>Small</option></select><select data-profile="resolution"><option value="">Default resolution</option><option value="2560x1440"${profile.resolution === "2560x1440" ? " selected" : ""}>1440p</option><option value="1920x1080"${profile.resolution === "1920x1080" ? " selected" : ""}>1080p</option><option value="1280x720"${profile.resolution === "1280x720" ? " selected" : ""}>720p</option></select><select data-profile="fps"><option value="0">Default FPS</option><option value="60"${profile.fps === 60 ? " selected" : ""}>60 FPS</option><option value="30"${profile.fps === 30 ? " selected" : ""}>30 FPS</option></select><input data-profile="clipLengthSeconds" type="number" min="5" max="3600" placeholder="Default seconds" value="${profile.clipLengthSeconds || ""}"></span></div>`;
-  }).join("") : '<div class="settings-row"><span class="muted">Add a monitored game to create a profile.</span></div>';
+    const key = game.toLowerCase();
+    const profile = s.settings.gameProfiles?.[key] || {};
+    const customized = profile.quality || profile.resolution || profile.fps || profile.clipLengthSeconds
+      || profile.microphoneDeviceId || Array.isArray(profile.audioExecutables);
+    const open = openProfiles.has(key) ? " open" : "";
+    return `<details class="settings-disclosure game-profile" data-profile-game="${escapeHtml(key)}"${open}><summary><span><strong>${escapeHtml(game)}</strong><small>${customized ? "Uses custom settings" : "Uses global defaults"}</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary><div class="profile-controls"><label><span>Quality</span><select data-profile="quality" aria-label="${escapeHtml(game)} quality"><option value="">Global default</option><option value="HQ"${profile.quality === "HQ" ? " selected" : ""}>High</option><option value="Small"${profile.quality === "Small" ? " selected" : ""}>Small</option></select></label><label><span>Resolution</span><select data-profile="resolution" aria-label="${escapeHtml(game)} resolution"><option value="">Global default</option><option value="2560x1440"${profile.resolution === "2560x1440" ? " selected" : ""}>1440p</option><option value="1920x1080"${profile.resolution === "1920x1080" ? " selected" : ""}>1080p</option><option value="1280x720"${profile.resolution === "1280x720" ? " selected" : ""}>720p</option></select></label><label><span>Frame rate</span><select data-profile="fps" aria-label="${escapeHtml(game)} frame rate"><option value="0">Global default</option><option value="60"${profile.fps === 60 ? " selected" : ""}>60 FPS</option><option value="30"${profile.fps === 30 ? " selected" : ""}>30 FPS</option></select></label><label><span>Clip length</span><input data-profile="clipLengthSeconds" aria-label="${escapeHtml(game)} clip length in seconds" type="number" min="5" max="3600" placeholder="Global default" value="${profile.clipLengthSeconds || ""}"></label></div></details>`;
+  }).join("") : '<div class="settings-row"><span class="muted">Add a monitored game to create an override.</span></div>';
   $("audio-application-list").innerHTML = s.settings.audioExecutables.length
     ? s.settings.audioExecutables
         .map(
@@ -401,46 +403,57 @@ function render(s, fill = false, refreshLibrary = false) {
     $("microphone-noise-gate").value = s.settings.microphoneNoiseGateDb ?? -40;
     $("microphone-nvidia-noise-removal").checked = s.settings.microphoneNvidiaNoiseRemoval !== false;
     updateMicrophoneNoiseGate();
-    $("trim-bitrate").value = s.settings.trimBitrate || "original";
     $("desktop-window").checked = s.settings.desktopWindow !== false;
     $("nightly-updates").checked = !!s.settings.nightlyUpdates;
     $("telemetry-mode").value = ["diagnostics", "version", "off"].includes(s.settings.telemetryMode) ? s.settings.telemetryMode : "off";
     updateStorageVisibility();
+    updateContextualSettingsVisibility();
   }
 }
 
 const isNightlyRelease = release => /(?:^|-)nightly(?:\.|$)/i.test(String(release?.version || ""));
+function createChangelogRelease(release, nightlyUpdates) {
+  const article = document.createElement("article");
+  article.className = "changelog-release";
+  const heading = document.createElement("div");
+  heading.className = "changelog-heading";
+  const version = document.createElement("strong");
+  version.textContent = `v${release.version}`;
+  const title = document.createElement("span");
+  title.textContent = release.title;
+  heading.append(version, title);
+  if (nightlyUpdates && !isNightlyRelease(release)) {
+    const recap = document.createElement("span");
+    recap.className = "changelog-tag";
+    recap.textContent = "Recap";
+    heading.append(recap);
+  }
+  const list = document.createElement("ul");
+  for (const change of release.changes || []) {
+    const item = document.createElement("li");
+    item.textContent = change;
+    list.append(item);
+  }
+  article.append(heading, list);
+  return article;
+}
 function renderChangelog(releases, nightlyUpdates) {
-  const container = $("changelog");
+  const latestContainer = $("changelog");
+  const historyContainer = $("release-history");
+  const historyToggle = $("release-history-toggle");
   const visibleReleases = nightlyUpdates ? releases : releases.filter(release => !isNightlyRelease(release));
   const renderKey = JSON.stringify({ releases: visibleReleases, nightlyUpdates });
-  if (container.dataset.rendered === renderKey) return;
-  container.dataset.rendered = renderKey;
-  container.replaceChildren(...visibleReleases.map(release => {
-    const article = document.createElement("article");
-    article.className = "changelog-release";
-    const heading = document.createElement("div");
-    heading.className = "changelog-heading";
-    const version = document.createElement("strong");
-    version.textContent = `v${release.version}`;
-    const title = document.createElement("span");
-    title.textContent = release.title;
-    heading.append(version, title);
-    if (nightlyUpdates && !isNightlyRelease(release)) {
-      const recap = document.createElement("span");
-      recap.className = "changelog-tag";
-      recap.textContent = "Recap";
-      heading.append(recap);
-    }
-    const list = document.createElement("ul");
-    for (const change of release.changes || []) {
-      const item = document.createElement("li");
-      item.textContent = change;
-      list.append(item);
-    }
-    article.append(heading, list);
-    return article;
-  }));
+  if (latestContainer.dataset.rendered === renderKey) return;
+  latestContainer.dataset.rendered = renderKey;
+  latestContainer.replaceChildren(...visibleReleases.slice(0, 1).map(release => createChangelogRelease(release, nightlyUpdates)));
+  historyContainer.replaceChildren(...visibleReleases.slice(1).map(release => createChangelogRelease(release, nightlyUpdates)));
+  const hasHistory = visibleReleases.length > 1;
+  historyToggle.classList.toggle("hidden", !hasHistory);
+  if (!hasHistory) {
+    historyContainer.classList.add("hidden");
+    historyToggle.setAttribute("aria-expanded", "false");
+    historyToggle.textContent = "View release history";
+  }
 }
 function loadRecordingThumbnails() {
   thumbnailObserver.disconnect();
@@ -485,6 +498,7 @@ function navigateToPage(page) {
   $("settings-button").classList.toggle("hidden", page === "settings");
   $("settings-back").classList.toggle("hidden", page !== "settings");
   $("workspace").classList.toggle("settings-open", page === "settings");
+  document.body.classList.toggle("settings-open", page === "settings");
   if (page === "recent" || page === "library") requestAnimationFrame(loadRecordingThumbnails);
 }
 document.querySelectorAll(".nav-main").forEach((button) => {
@@ -497,7 +511,7 @@ document.querySelectorAll(".settings-nav-item").forEach((button) => {
     document.querySelectorAll(".settings-group").forEach((group) => group.classList.remove("active"));
     button.classList.add("active");
     $(`settings-${button.dataset.settingsGroup}`).classList.add("active");
-    if (button.dataset.settingsGroup === "capture") refreshMicrophones(state.settings.microphoneDeviceId);
+    if (button.dataset.settingsGroup === "audio") refreshMicrophones(state.settings.microphoneDeviceId);
   };
 });
 async function refreshMicrophones(selectedId) {
@@ -624,8 +638,22 @@ const disableShortcut = async (input, feedback) => {
   render(await window.clips.saveSettings(values()), true);
   feedback.textContent = "Disabled";
 };
-$("disable-hotkey").onclick = () => disableShortcut($("hotkey"), $("shortcut-feedback"));
-$("disable-marker-hotkey").onclick = () => disableShortcut(markerShortcutInput, markerShortcutFeedback);
+const bindDisableShortcut = (button, input, feedback) => {
+  button.onclick = event => {
+    event.preventDefault();
+    event.stopPropagation();
+    disableShortcut(input, feedback);
+  };
+};
+bindDisableShortcut($("disable-hotkey"), $("hotkey"), $("shortcut-feedback"));
+bindDisableShortcut($("disable-marker-hotkey"), markerShortcutInput, markerShortcutFeedback);
+$("release-history-toggle").onclick = () => {
+  const history = $("release-history");
+  const expanded = history.classList.contains("hidden");
+  history.classList.toggle("hidden", !expanded);
+  $("release-history-toggle").setAttribute("aria-expanded", String(expanded));
+  $("release-history-toggle").textContent = expanded ? "Hide release history" : "View release history";
+};
 $("game-list").onclick = async (e) => {
   if (e.target.dataset.remove != null) {
     state.settings.gameExecutables.splice(Number(e.target.dataset.remove), 1);
@@ -650,7 +678,7 @@ $("scan").onclick = async () => {
 };
 $("scan-shortcut").onclick = () => {
   navigateToPage("settings");
-  document.querySelector('[data-settings-group="general"]').click();
+  document.querySelector('[data-settings-group="recording"]').click();
   $("scan").click();
 };
 $("process-picker").onclick = async (e) => {
@@ -753,6 +781,13 @@ function updateStorageVisibility() {
   $("days-row").classList.toggle("hidden", !byDays);
 }
 $("cleanup-mode").addEventListener("change", updateStorageVisibility);
+function updateContextualSettingsVisibility() {
+  $("instant-replay-length-row").classList.toggle("hidden", !$("instant-replay").checked);
+  const microphoneEnabled = $("microphone").value !== "disabled";
+  $("microphone-test-row").classList.toggle("hidden", !microphoneEnabled);
+  $("microphone-volume-row").classList.toggle("hidden", !microphoneEnabled);
+  $("microphone-processing").classList.toggle("hidden", !microphoneEnabled);
+}
 let autoSaveTimer = null;
 let autoSaveInFlight = false;
 let autoSaveRequested = false;
@@ -779,9 +814,11 @@ const queueAutoSave = (delay = 450) => {
   autoSaveTimer = setTimeout(flushAutoSave, delay);
 };
 $("settings").addEventListener("input", (event) => {
+  if (event.target.matches("#instant-replay, #microphone")) updateContextualSettingsVisibility();
   if (event.target.matches("input:not([readonly]), select, textarea")) queueAutoSave();
 });
 $("settings").addEventListener("change", (event) => {
+  if (event.target.matches("#instant-replay, #microphone")) updateContextualSettingsVisibility();
   const profileControl = event.target.closest("[data-profile]");
   if (profileControl) {
     const game = profileControl.closest("[data-profile-game]").dataset.profileGame;
@@ -930,8 +967,7 @@ $("open-editor").onclick = enterVolumeMixer;
 $("choose-trim").onclick = enterTrimEditor;
 $("choose-volume-mix").onclick = enterVolumeMixer;
 $("editor-trim-bitrate").onchange = async () => {
-  $("trim-bitrate").value = $("editor-trim-bitrate").value;
-  render(await window.clips.saveSettings(values()));
+  render(await window.clips.saveSettings({ trimBitrate: $("editor-trim-bitrate").value }));
 };
 function mixerAdjustments() {
   return [...$("mixer-tracks").querySelectorAll('input[type="range"]')]
