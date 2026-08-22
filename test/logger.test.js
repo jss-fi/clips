@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createLogger, pruneLogText, redactLogText } = require('../src/logger');
+const { createLogger, pruneLogText, readRecentLogEntries, redactLogText } = require('../src/logger');
 
 test('log pruning keeps only the recent hour', () => {
   const text = [
@@ -40,5 +40,27 @@ test('logger maintenance redacts sensitive text already on disk', () => {
   fs.writeFileSync(filePath, '[2026-08-12T19:00:00.000Z] [INFO] C:\\Users\\tikru\\AppData\n');
   createLogger({ directory, now: () => Date.parse('2026-08-12T19:00:01.000Z') });
   assert.doesNotMatch(fs.readFileSync(filePath, 'utf8'), /tikru/);
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test('recent log entries recover bounded structured updater diagnostics', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'clips-log-entries-'));
+  const filePath = path.join(directory, 'clips.log');
+  fs.writeFileSync(filePath, [
+    '[2026-08-22T20:47:56.260Z] [INFO] staged updater download begin {"version":"0.6.0-nightly.n000011.test","size":245122252}',
+    '[2026-08-22T20:47:56.261Z] [INFO] unrelated event {"ignored":true}',
+    '[2026-08-22T20:47:56.262Z] [WARN] staged updater download fallback to single stream {"status":200}',
+    '[2026-08-22T20:47:56.263Z] [INFO] staged updater malformed {not-json}'
+  ].join('\n'));
+
+  assert.deepEqual(readRecentLogEntries(filePath, {
+    eventPrefix: 'staged updater ',
+    maxEntries: 1
+  }), [{
+    time: '2026-08-22T20:47:56.262Z',
+    level: 'warn',
+    event: 'staged updater download fallback to single stream',
+    details: { status: 200 }
+  }]);
   fs.rmSync(directory, { recursive: true, force: true });
 });

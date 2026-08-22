@@ -12,7 +12,7 @@ const { RUNTIME_VERSION, runtimeRoot, isRuntimeReady, ensureRuntimeInstalled } =
 const { redirectToActiveVersion, confirmActiveVersionBoot, createStagedUpdater } = require('./updater');
 const { createTrayController } = require('./tray-controller');
 const { MPV_QUIT_ON_FULLSCREEN_EXIT_SCRIPT, mpvFullscreenArgs } = require('./mpv-fullscreen');
-const { createLogger, redactLogText } = require('./logger');
+const { createLogger, readRecentLogEntries, redactLogText } = require('./logger');
 const { loadSettingsFile, normalizeSettingsUpdate, captureRestartRequired } = require('./settings');
 const { configuredEndpoint, loadInstallationId, createTelemetry } = require('./telemetry');
 const { parseProcessList } = require('./process-list');
@@ -69,9 +69,18 @@ let updateCheckTimer = null;
 let updateCheckTimeout = null;
 let updateConfigurationGeneration = 0;
 let stagedUpdater = null;
-const updateDiagnostics = [];
 let runtimeSetupPromise = Promise.resolve();
 const logger = createLogger({ directory: path.join(app.getPath('userData'), 'logs') });
+const UPDATE_DIAGNOSTIC_LIMIT = 250;
+const UPDATE_LOG_EVENT_PREFIX = 'staged updater ';
+const updateDiagnostics = readRecentLogEntries(logger.filePath, {
+  eventPrefix: UPDATE_LOG_EVENT_PREFIX,
+  maxEntries: UPDATE_DIAGNOSTIC_LIMIT
+}).map(entry => ({
+  ...entry,
+  event: entry.event.slice(UPDATE_LOG_EVENT_PREFIX.length),
+  recovered: true
+}));
 const trayController = createTrayController({ getWindow: () => win });
 const telemetryEndpoint = configuredEndpoint();
 let telemetry = null;
@@ -1069,7 +1078,7 @@ function setUpdateState(next) {
 }
 function recordUpdateDiagnostic(entry) {
   updateDiagnostics.push(entry);
-  if (updateDiagnostics.length > 250) updateDiagnostics.shift();
+  if (updateDiagnostics.length > UPDATE_DIAGNOSTIC_LIMIT) updateDiagnostics.shift();
 }
 function copyUpdateDiagnostics() {
   const header = {
