@@ -10,6 +10,7 @@ legacy/telemetry-worker/.wrangler/
 clips-worker/.wrangler/
 clips-worker/public/
 .clips-release.json
+.clips-release.json.tmp
 src/release-config.json
 legal/licenses/
 legacy/update-worker/wrangler.jsonc

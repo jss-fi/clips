@@ -1,13 +1,14 @@
 [
   {
     "version": "next",
-    "title": "Better-organized settings and reliable updates",
+    "title": "Better-organized settings, reliable updates, and simpler releases",
     "changes": [
       "Settings now use labeled navigation and focused Recording, Clips, Video, Audio, Storage, Advanced, and About pages.",
       "Less-used game overrides, ignored applications, video internals, microphone processing, storage details, and troubleshooting tools stay out of the way until needed.",
       "Shared navigation stays in place when opening Settings, shortcuts use a compact hover action to disable them, and About can show the full release history.",
       "The duplicate Editor settings page and internal build details have been removed.",
-      "Update downloads now retry individual parallel connections instead of silently restarting in slower single-stream mode, with clearer diagnostics when a server does not support parallel downloads."
+      "Update downloads now retry individual parallel connections instead of silently restarting in slower single-stream mode, with clearer diagnostics when a server does not support parallel downloads.",
+      "Release builds now use one guarded, retry-safe command that checks, versions, packages, publishes, archives, and verifies every artifact before it finishes."
     ]
   },
   {

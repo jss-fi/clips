@@ -6,7 +6,7 @@ Every published build must have a user-facing entry in `src/changelog.json`.
 
 ### Worktree release gate
 
-Before starting any versioning, release build, or publish step, inspect the current branch and worktree with `git status --short --branch` and `git worktree list --porcelain`.
+The standard `npm run release` command performs the required branch, worktree, and pending-change inspection. Before using any lower-level versioning, release-build, or publish command directly, inspect with `git status --short --branch` and `git worktree list --porcelain`.
 
 Only the primary worktree on `main` may version or publish an update. If you are in a newly created or linked worktree, or on any branch other than `main`:
 
@@ -20,26 +20,20 @@ Only the primary worktree on `main` may version or publish an update. If you are
 After completing an application change intended for nightly release:
 
 1. Add the new entry at the start of `src/changelog.json` with `"version": "next"`.
-2. Run `npm run check`.
-3. Commit the application changes locally. Do not push unless the user explicitly asks.
-4. Determine the next development line from the latest stable release before versioning. Nightlies after stable `<major>.<minor>` must use the next minor line (`<major>.<minor + 1>`); for example, stable `0.5` is followed by `0.6-nightly.1`, never `0.5-nightly.*`.
-5. Run `npm run version:nightly -- <next-major.minor>`. This derives a monotonically ordered internal SemVer and the displayed `<major.minor>-<short-commit-hash>` from the committed source snapshot.
-6. Commit the generated `package.json`, `package-lock.json`, and changelog version as a local release-metadata commit. Do not push unless explicitly asked.
-7. Rebuild the application. For ordinary changes, run `npm run dist:release`. When OBS, FFmpeg, MPV, libmpv, or runtime packaging changes, run `npm run dist:fresh` first, then run `npm run dist:release`.
-8. Publish nightly with `powershell -NoProfile -ExecutionPolicy Bypass -File clips-worker/scripts/publish.ps1`.
-9. Verify `https://cdn.clips.jss.fi/latest.yml`, `https://cdn.clips.jss.fi/latest.json`, and every referenced artifact.
+2. Commit the application changes locally. Do not push unless the user explicitly asks.
+3. Run `npm run release -- <next-major.minor>-nightly`; for example, stable `0.5` is followed by `npm run release -- 0.6-nightly`.
+
+The release command enforces the worktree gate and correct development line, checks credentials, runs `npm run check`, derives and commits the monotonically ordered nightly metadata, automatically selects ordinary or fresh runtime packaging, builds and compatibility-tests the release, publishes it, and waits until R2, CDN, and GitHub verification finish. It handles retention cleanup without blocking a verified current release on an unrelated older archive. If it fails, fix the reported issue and rerun the same command; failed metadata commits are rolled back, while prepared releases reuse only the exact checksum-verified artifacts recorded after the original build. Never add `--fresh` to a prepared release with recorded artifacts: the command rejects that unsafe combination and requires a new release/version if fresh runtime artifacts are needed. It never pushes branch commits. Do not duplicate the command's build, publication, or public-verification steps unless it reports a failure that specifically requires lower-level diagnosis.
 
 ### Stable release
 
 Only publish stable when the user explicitly approves that specific promotion. For a stable release:
 
 1. Add or finalize the user-facing changelog entry before building.
-2. Run `npm run check`.
-3. Set the full SemVer in `package.json` and `package-lock.json`; a displayed `0.3` stable release uses internal version `0.3.0`.
-4. Commit the stable release locally. Do not push unless explicitly asked.
-5. Build using the same ordinary/fresh rules as nightly.
-6. Publish to both channels with `powershell -NoProfile -ExecutionPolicy Bypass -File clips-worker/scripts/publish.ps1 -Channel both`, so nightly users also receive the stable baseline.
-7. Verify both nightly metadata URLs, both `/stable` metadata URLs, and every referenced artifact.
+2. Commit the application changes locally with the first changelog entry still set to `"version": "next"`. Do not push unless explicitly asked.
+3. Run `npm run release -- <major.minor>`; for example, `npm run release -- 0.6`.
+
+The same guarded command sets the internal patch-zero SemVer, commits stable release metadata, always builds the full setup installer (restaging the media runtime only when needed), publishes the stable baseline to both channels, and verifies both metadata feeds and every referenced artifact. It never pushes branch commits.
 
 Subject to the worktree release gate above, never finish an application-change task in the primary `main` worktree with only source edits unless the user explicitly says not to rebuild or not to publish.
 
