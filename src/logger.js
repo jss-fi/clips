@@ -24,6 +24,33 @@ function pruneLogText(text, cutoffMs, maxBytes) {
   return recent.length ? `${recent.join('\n')}\n` : '';
 }
 
+function readRecentLogEntries(filePath, {
+  eventPrefix = '',
+  maxEntries = 250
+} = {}) {
+  try {
+    const entries = [];
+    for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+      const match = /^\[([^\]]+)\] \[([^\]]+)\] (.+?)(?: (\{.*\}))?$/.exec(line);
+      if (!match || (eventPrefix && !match[3].startsWith(eventPrefix))) continue;
+      let details = {};
+      if (match[4]) {
+        try { details = JSON.parse(match[4]); }
+        catch { continue; }
+      }
+      entries.push({
+        time: match[1],
+        level: match[2].toLowerCase(),
+        event: match[3],
+        details
+      });
+    }
+    return entries.slice(-Math.max(0, maxEntries));
+  } catch {
+    return [];
+  }
+}
+
 function createLogger({
   directory,
   maxAgeMs = DEFAULT_MAX_AGE_MS,
@@ -67,4 +94,11 @@ function createLogger({
   };
 }
 
-module.exports = { createLogger, pruneLogText, redactLogText, DEFAULT_MAX_AGE_MS, DEFAULT_MAX_BYTES };
+module.exports = {
+  createLogger,
+  pruneLogText,
+  readRecentLogEntries,
+  redactLogText,
+  DEFAULT_MAX_AGE_MS,
+  DEFAULT_MAX_BYTES
+};
