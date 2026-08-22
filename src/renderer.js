@@ -319,9 +319,10 @@ function render(s, fill = false, refreshLibrary = false) {
   const archivedFavorites = archived.filter(recording => recording.favorite);
   const archivedOthers = archived.filter(recording => !recording.favorite);
   const chronological = librarySort === "newest" || librarySort === "oldest";
-  const visibleFavorites = archivedFavorites.slice(0, archiveVisibleCount);
+  const visibleFavorites = chronological ? archivedFavorites.slice(0, archiveVisibleCount) : [];
   const archiveItems = chronological ? archivedOthers : archived;
-  const visibleArchiveItems = archiveItems.slice(0, archiveVisibleCount);
+  const remainingVisibleCount = Math.max(0, archiveVisibleCount - visibleFavorites.length);
+  const visibleArchiveItems = archiveItems.slice(0, remainingVisibleCount);
   const groupedItems = visibleArchiveItems.reduce((groups, recording) => {
     const key = chronological ? recording.day
       : librarySort === "game" ? (recording.game || "Older recordings (game unknown)")
@@ -331,7 +332,7 @@ function render(s, fill = false, refreshLibrary = false) {
   }, {});
   $("archive-favorite-count").textContent = archivedFavorites.length;
   $("archive-favorites-section").classList.toggle("hidden", !chronological || !archivedFavorites.length);
-  $("archive-favorite-list").innerHTML = renderFiles(visibleFavorites, "", "");
+  $("archive-favorite-list").innerHTML = chronological ? renderFiles(visibleFavorites, "", "") : "";
   $("archive-summary").textContent = archived.length
     ? librarySort === "size" ? `${archived.length} saved item${archived.length === 1 ? "" : "s"}, ranked by file size.`
     : librarySort === "game" ? `${archived.length} saved item${archived.length === 1 ? "" : "s"}, grouped by game.`

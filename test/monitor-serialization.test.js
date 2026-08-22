@@ -15,6 +15,7 @@ test('monitor throttles full storage scans independently of game detection', () 
   const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
   assert.match(source, /const STORAGE_CLEANUP_INTERVAL_MS = 60 \* 1000/);
   assert.match(source, /async function cleanupStorageOnSchedule\(force = false\)/);
-  assert.match(source, /await cleanupStorageOnSchedule\(true\)/);
+  assert.match(source, /if \(!storageCleanupFresh\) await cleanupStorageOnSchedule\(true\)/);
   assert.match(source, /await cleanupStorageOnSchedule\(\)/);
+  assert.match(source, /await startSession\(\{ storageCleanupFresh: true \}\)/);
 });
