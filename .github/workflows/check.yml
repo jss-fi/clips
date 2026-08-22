@@ -7,7 +7,7 @@ on:
 jobs:
   check:
     name: Application checks
-    runs-on: windows-2022
+    runs-on: blacksmith-4vcpu-windows-2025
     env:
       CLIPS_HERMETIC_CHECK: '1'
     steps:
@@ -26,7 +26,7 @@ jobs:
 
   build-mpv-host:
     name: Build MPV host
-    runs-on: windows-2022
+    runs-on: blacksmith-4vcpu-windows-2025
     steps:
       - uses: actions/checkout@v4
       - name: Cache pinned native prerequisites
@@ -42,7 +42,7 @@ jobs:
 
   build-capture-host:
     name: Build capture host
-    runs-on: windows-2022
+    runs-on: blacksmith-4vcpu-windows-2025
     steps:
       - uses: actions/checkout@v4
       - name: Cache pinned native prerequisites
