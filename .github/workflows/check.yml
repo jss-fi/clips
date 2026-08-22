@@ -5,7 +5,8 @@ on:
   pull_request:
 
 jobs:
-  windows:
+  check:
+    name: Application checks
     runs-on: windows-2022
     env:
       CLIPS_HERMETIC_CHECK: '1'
@@ -21,6 +22,13 @@ jobs:
       - run: npm ci --prefix clips-worker
       - run: npm ci --prefix legacy/update-worker
       - run: npm ci --prefix legacy/telemetry-worker
+      - run: npm run check
+
+  build-mpv-host:
+    name: Build MPV host
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
       - name: Cache pinned native prerequisites
         uses: actions/cache@v4
         with:
@@ -29,6 +37,21 @@ jobs:
       - name: Stage pinned native prerequisites
         shell: powershell
         run: scripts/install-prerequisites.ps1 -SkipToolInstall -SkipNativeBuild -DownloadRoot .clips-dev/prerequisites
-      - run: npm run check
-      - run: scripts\build-mpv-host.cmd
-      - run: scripts\build-capture-host.cmd
+      - name: Build MPV host
+        run: scripts\build-mpv-host.cmd
+
+  build-capture-host:
+    name: Build capture host
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache pinned native prerequisites
+        uses: actions/cache@v4
+        with:
+          path: .clips-dev/prerequisites
+          key: clips-native-prerequisites-v1-${{ hashFiles('scripts/install-prerequisites.ps1') }}
+      - name: Stage pinned native prerequisites
+        shell: powershell
+        run: scripts/install-prerequisites.ps1 -SkipToolInstall -SkipNativeBuild -DownloadRoot .clips-dev/prerequisites
+      - name: Build capture host
+        run: scripts\build-capture-host.cmd
