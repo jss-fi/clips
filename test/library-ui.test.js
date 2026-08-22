@@ -70,7 +70,10 @@ test('stitching clears cached selection state with a forced library refresh', ()
 test('large archives render in bounded batches with an explicit continuation', () => {
   assert.match(html, /id="archive-load-more"/);
   assert.match(renderer, /const ARCHIVE_PAGE_SIZE = 120/);
-  assert.match(renderer, /archiveItems\.slice\(0, archiveVisibleCount\)/);
+  assert.match(renderer, /const visibleFavorites = chronological \? archivedFavorites\.slice\(0, archiveVisibleCount\) : \[\]/);
+  assert.match(renderer, /const remainingVisibleCount = Math\.max\(0, archiveVisibleCount - visibleFavorites\.length\)/);
+  assert.match(renderer, /archiveItems\.slice\(0, remainingVisibleCount\)/);
+  assert.match(renderer, /archive-favorite-list"\)\.innerHTML = chronological \? renderFiles\(visibleFavorites/);
   assert.match(renderer, /archiveVisibleCount \+= ARCHIVE_PAGE_SIZE/);
   assert.match(css, /\.archive-day\s*\{[^}]*content-visibility:\s*auto/);
 });

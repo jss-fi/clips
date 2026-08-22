@@ -237,7 +237,7 @@ function todayFolder() {
   return folder;
 }
 function todayKey() { return new Date().toLocaleDateString('sv-SE'); }
-async function startSession({ recording = true, replayLengthSeconds = 0 } = {}) {
+async function startSession({ recording = true, replayLengthSeconds = 0, storageCleanupFresh = false } = {}) {
   const profile = settings.gameProfiles?.[activeGames[0]?.toLowerCase()] || {};
   const captureSettings = { ...settings,
     obsRecordingQuality: profile.quality || settings.obsRecordingQuality,
@@ -256,7 +256,7 @@ async function startSession({ recording = true, replayLengthSeconds = 0 } = {}) 
       clipLengthSeconds: captureSettings.clipLengthSeconds
     });
   }
-  await cleanupStorageOnSchedule(true);
+  if (!storageCleanupFresh) await cleanupStorageOnSchedule(true);
   const wantedAudio = new Set([...(profile.audioExecutables || settings.audioExecutables), ...activeGames].map(name => name.toLowerCase()));
   const outputDirectory = todayFolder();
   const audioApplications = runningApps.filter(app => wantedAudio.has(app.name.toLowerCase()));
@@ -771,10 +771,10 @@ async function monitor() {
       clearTimeout(stopTimer); stopTimer = null;
       if (captureStatus.recording && sessionDate && sessionDate !== todayKey()) {
         await obs.stopSession();
-        await startSession();
+        await startSession({ storageCleanupFresh: true });
       } else if (!captureStatus.recording) {
         if (captureStatus.replayBuffer) await obs.stopSession();
-        await startSession();
+        await startSession({ storageCleanupFresh: true });
       }
     } else if (settings.autoRecord && !activeGames.length && !stopTimer && captureStatus.recording) {
       stopTimer = setTimeout(async () => {
