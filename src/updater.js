@@ -16,6 +16,8 @@ const VERSION_DIRECTORY = new RegExp(`^(${SEMVER})(?:\\.app-[A-Za-z0-9-]+)?$`);
 const RETRYABLE_FILE_ERRORS = new Set(['EACCES', 'EBUSY', 'ENOTEMPTY', 'EPERM']);
 const DOWNLOAD_STREAMS = 8;
 const MINIMUM_DOWNLOAD_PART_SIZE = 8 * 1024 * 1024;
+const RANGE_DOWNLOAD_RETRIES = 2;
+const RANGE_RETRY_DELAY_MS = 250;
 const METADATA_TIMEOUT_MS = 30 * 1000;
 const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const STALE_PREPARATION_AGE_MS = 60 * 60 * 1000;
@@ -233,18 +235,23 @@ function downloadRanges(size, streams = DOWNLOAD_STREAMS, minimumPartSize = MINI
 async function writeResponseBody(response, file, position, expectedSize, onBytes) {
   const reader = response.body.getReader();
   let received = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = Buffer.from(value);
-    if (received + chunk.length > expectedSize) {
-      throw new Error('The update server returned too much data.');
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      if (received + chunk.length > expectedSize) {
+        throw new Error('The update server returned too much data.');
+      }
+      await file.write(chunk, 0, chunk.length, position + received);
+      received += chunk.length;
+      onBytes(chunk.length);
     }
-    await file.write(chunk, 0, chunk.length, position + received);
-    received += chunk.length;
-    onBytes(chunk.length);
+    if (received !== expectedSize) throw new Error('The update server returned an incomplete download.');
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    throw error;
   }
-  if (received !== expectedSize) throw new Error('The update server returned an incomplete download.');
 }
 
 async function withFetchTimeout(fetchImpl, url, options, consume, timeoutMs = DOWNLOAD_TIMEOUT_MS) {
@@ -253,12 +260,17 @@ async function withFetchTimeout(fetchImpl, url, options, consume, timeoutMs = DO
   const abortFromExternal = () => controller.abort(externalSignal.reason);
   if (externalSignal?.aborted) abortFromExternal();
   else externalSignal?.addEventListener('abort', abortFromExternal, { once: true });
-  const timeout = setTimeout(() => controller.abort(new Error('The update request timed out.')), timeoutMs);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new Error('The update request timed out.'));
+  }, timeoutMs);
   try {
     const response = await fetchImpl(url, { ...options, signal: controller.signal });
     return await consume(response);
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('The update request timed out.');
+    if (timedOut) throw new Error('The update request timed out.');
+    if (externalSignal?.aborted) throw externalSignal.reason || error;
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -266,31 +278,118 @@ async function withFetchTimeout(fetchImpl, url, options, consume, timeoutMs = DO
   }
 }
 
-async function downloadInRanges(url, archive, size, ranges, onBytes, fetchImpl) {
+class RangeUnsupportedError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = 'RangeUnsupportedError';
+    this.code = 'ERR_UPDATE_RANGES_UNSUPPORTED';
+    Object.assign(this, details);
+  }
+}
+
+function rangeErrorDetails(error) {
+  return {
+    code: error?.code,
+    status: error?.status,
+    contentRange: error?.contentRange,
+    message: error?.message
+  };
+}
+
+async function downloadRange(url, file, size, range, onBytes, fetchImpl, signal) {
+  const { start, end } = range;
+  await withFetchTimeout(fetchImpl, url, {
+    cache: 'no-store',
+    headers: {
+      'Accept-Encoding': 'identity',
+      Range: `bytes=${start}-${end}`
+    },
+    signal
+  }, async response => {
+    const rejectResponse = async error => {
+      await response.body?.cancel(error).catch(() => {});
+      throw error;
+    };
+    const contentRangeHeader = response.headers.get('content-range') || '';
+    const contentRange = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(contentRangeHeader);
+    if (response.status === 200) {
+      return rejectResponse(new RangeUnsupportedError('The update server ignored the byte range request.', {
+        status: response.status,
+        contentRange: contentRangeHeader,
+        range: { start, end }
+      }));
+    }
+    if (response.status !== 206) {
+      const error = new Error(`Update range download failed (${response.status}).`);
+      error.status = response.status;
+      return rejectResponse(error);
+    }
+    if (!response.body) throw new Error('The update server returned an empty range response.');
+    if (
+      !contentRange
+      || Number(contentRange[1]) !== start
+      || Number(contentRange[2]) !== end
+      || Number(contentRange[3]) !== size
+    ) {
+      const error = new Error('The update server returned an invalid Content-Range header.');
+      error.status = response.status;
+      error.contentRange = contentRangeHeader;
+      return rejectResponse(error);
+    }
+    await writeResponseBody(response, file, start, end - start + 1, onBytes);
+  });
+}
+
+async function downloadRangeWithRetries(url, file, size, range, onBytes, fetchImpl, signal, {
+  retries,
+  retryDelayMs,
+  onDiagnostic
+}) {
+  const maximumAttempts = retries + 1;
+  let unsupportedAttempts = 0;
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    let attemptBytes = 0;
+    try {
+      await downloadRange(url, file, size, range, bytes => {
+        attemptBytes += bytes;
+        onBytes(bytes);
+      }, fetchImpl, signal);
+      if (attempt > 1) onDiagnostic('info', 'range retry succeeded', { range, attempt });
+      return;
+    } catch (error) {
+      if (attemptBytes) onBytes(-attemptBytes);
+      if (signal.aborted) throw signal.reason || error;
+      if (error instanceof RangeUnsupportedError) unsupportedAttempts += 1;
+      if (attempt === maximumAttempts) {
+        const unsupported = unsupportedAttempts === maximumAttempts;
+        onDiagnostic(unsupported ? 'warn' : 'error', 'range failed', {
+          range,
+          attempts: attempt,
+          ...rangeErrorDetails(error)
+        });
+        if (unsupported) throw error;
+        throw new Error(`Update range ${range.start}-${range.end} failed after ${attempt} attempts: ${error?.message || error}`, { cause: error });
+      }
+      onDiagnostic('warn', 'range retry scheduled', {
+        range,
+        failedAttempt: attempt,
+        nextAttempt: attempt + 1,
+        maximumAttempts,
+        ...rangeErrorDetails(error)
+      });
+      if (retryDelayMs > 0) await new Promise(resolve => setTimeout(resolve, retryDelayMs * attempt));
+    }
+  }
+}
+
+async function downloadInRanges(url, archive, size, ranges, onBytes, fetchImpl, retryOptions) {
   const controller = new AbortController();
   const file = await fs.promises.open(archive, 'w');
   try {
     await file.truncate(size);
-    const downloads = ranges.map(async ({ start, end }) => {
-      await withFetchTimeout(fetchImpl, url, {
-        cache: 'no-store',
-        headers: {
-          'Accept-Encoding': 'identity',
-          Range: `bytes=${start}-${end}`
-        }, signal: controller.signal
-      }, async response => {
-        const contentRange = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range') || '');
-        if (
-          response.status !== 206
-          || !response.body
-          || !contentRange
-          || Number(contentRange[1]) !== start
-          || Number(contentRange[2]) !== end
-          || Number(contentRange[3]) !== size
-        ) throw new Error('The update server does not support parallel downloads.');
-        await writeResponseBody(response, file, start, end - start + 1, onBytes);
-      });
-    });
+    const downloads = ranges.map(range => downloadRangeWithRetries(
+      url, file, size, range, onBytes, fetchImpl, controller.signal, retryOptions
+    ));
     try {
       await Promise.all(downloads);
     } catch (error) {
@@ -318,7 +417,10 @@ async function downloadInOneStream(url, archive, size, onBytes, fetchImpl) {
 async function downloadUpdateArchive(url, archive, size, onProgress = () => {}, {
   fetchImpl = fetch,
   streams = DOWNLOAD_STREAMS,
-  minimumPartSize = MINIMUM_DOWNLOAD_PART_SIZE
+  minimumPartSize = MINIMUM_DOWNLOAD_PART_SIZE,
+  rangeRetries = RANGE_DOWNLOAD_RETRIES,
+  rangeRetryDelayMs = RANGE_RETRY_DELAY_MS,
+  onDiagnostic = () => {}
 } = {}) {
   const ranges = downloadRanges(size, streams, minimumPartSize);
   let received = 0;
@@ -327,13 +429,34 @@ async function downloadUpdateArchive(url, archive, size, onProgress = () => {}, 
     onProgress(received);
   };
   if (ranges.length) {
+    onDiagnostic('info', 'mode selected', {
+      mode: 'parallel',
+      streams: ranges.length,
+      maximumAttemptsPerRange: rangeRetries + 1
+    });
     try {
-      await downloadInRanges(url, archive, size, ranges, onBytes, fetchImpl);
+      await downloadInRanges(url, archive, size, ranges, onBytes, fetchImpl, {
+        retries: rangeRetries,
+        retryDelayMs: rangeRetryDelayMs,
+        onDiagnostic
+      });
       return;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof RangeUnsupportedError)) throw error;
+      onDiagnostic('warn', 'fallback to single stream', {
+        reason: error.message,
+        status: error.status,
+        contentRange: error.contentRange,
+        range: error.range
+      });
       received = 0;
       onProgress(0);
     }
+  } else {
+    onDiagnostic('info', 'mode selected', {
+      mode: 'single',
+      reason: 'archive is too small for multiple download ranges'
+    });
   }
   await downloadInOneStream(url, archive, size, onBytes, fetchImpl);
 }
@@ -614,6 +737,8 @@ function createStagedUpdater({ app, feedUrl, onState, logger, onDiagnostic = () 
           lastPercent = percent;
           emit({ status: 'downloading', version: metadata.version, percent, message: '' });
         }
+      }, {
+        onDiagnostic: (level, event, details) => trace(level, `download ${event}`, details)
       });
       emit({ status: 'preparing', version: metadata.version, percent: 100, message: 'Preparing update…' });
       trace('info', 'download complete', { archive, size: (await rawFs.promises.stat(archive)).size });
