@@ -10,6 +10,21 @@
     ]
   },
   {
+    "version": "0.6-nightly.10",
+    "title": "Smoother large libraries",
+    "changes": [
+      "Routine recorder updates no longer rebuild an unchanged clip library, keeping controls responsive as the collection grows.",
+      "Large archives now load in manageable batches, use bounded thumbnail memory, and avoid library scans while no interface is visible."
+    ]
+  },
+  {
+    "version": "0.6-nightly.9",
+    "title": "Faster recent update downloads",
+    "changes": [
+      "The three newest releases now remain on the update CDN for fast downloads, while older release links continue through the permanent GitHub archive."
+    ]
+  },
+  {
     "version": "0.6-nightly.8",
     "title": "Overlay waves arrive with the notification",
     "changes": [

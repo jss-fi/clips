@@ -60,6 +60,8 @@ if ($stagedLatest.version -ne $Version -or $stagedLatest.url -ne $appPackageName
 if ($LASTEXITCODE -ne 0) { throw 'R2 publishing failed.' }
 & node (Join-Path $projectRoot 'scripts\verify-public-release.mjs') $dist $Channel $Version
 if ($LASTEXITCODE -ne 0) { throw 'Public CDN verification failed; release artifacts remain safely on R2.' }
+& node (Join-Path $workerRoot 'scripts\publish-r2.mjs') $dist $Bucket $Channel $Version mark
+if ($LASTEXITCODE -ne 0) { throw 'Published-release marker failed; release artifacts remain safely on R2.' }
 
 $archiveScript = Join-Path $projectRoot 'scripts\archive-release-background.mjs'
 if ($WaitForArchive) {

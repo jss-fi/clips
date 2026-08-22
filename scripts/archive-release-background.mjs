@@ -12,5 +12,5 @@ function run(script, args) {
 }
 run(path.join(root, 'scripts', 'publish-github-release.mjs'), [version]);
 run(path.join(root, 'clips-worker', 'scripts', 'publish-r2.mjs'), [dist, bucket, channel, version, 'cleanup']);
-if (typeof stdout === 'number') fs.writeSync(stdout, `GitHub archival and R2 cleanup completed for Clips ${version}.\n`);
-else console.log(`GitHub archival and R2 cleanup completed for Clips ${version}.`);
+if (typeof stdout === 'number') fs.writeSync(stdout, `GitHub archival and R2 retention completed for Clips ${version}.\n`);
+else console.log(`GitHub archival and R2 retention completed for Clips ${version}.`);

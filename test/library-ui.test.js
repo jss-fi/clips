@@ -6,6 +6,7 @@ const path = require('path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'styles.css'), 'utf8');
 const renderer = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer.js'), 'utf8');
+const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
 
 test('library organization controls live in Library, not Recent', () => {
   const recent = html.slice(html.indexOf('<section id="recent"'), html.indexOf('<section id="library"'));
@@ -42,4 +43,50 @@ test('non-chronological library sorts stop grouping recordings by day', () => {
   assert.match(renderer, /librarySort === "game" \? \(recording\.game \|\| "Older recordings \(game unknown\)"\)/);
   assert.match(renderer, /: "Largest files"/);
   assert.match(renderer, /!chronological \|\| !archivedFavorites\.length/);
+});
+
+test('unchanged recording collections do not rebuild the library DOM', () => {
+  assert.match(renderer, /libraryJson !== renderedLibraryJson/);
+  assert.match(renderer, /render\(state, false, true\)/);
+  assert.match(renderer, /renderedLibraryJson = libraryJson/);
+  assert.match(renderer, /recording\.path, recording\.name, recording\.title/);
+  assert.match(renderer, /recentDetailElements\.get\(recording\.path\)/);
+  assert.doesNotMatch(renderer, /JSON\.stringify\(\[s\.recordings \|\| \[\], s\.archivedRecordings/);
+});
+
+test('recording mutations reuse the state snapshot they broadcast', () => {
+  assert.match(main, /async function broadcast\(currentState = null, \{ force = false \} = \{\}\)/);
+  assert.match(main, /async function setRecordingFavorite[\s\S]*?return broadcast\(null, \{ force: true \}\);/);
+  assert.match(main, /async function deleteRecordings[\s\S]*?return broadcast\(null, \{ force: true \}\);/);
+  assert.match(main, /async function saveClip[\s\S]*?return broadcast\(null, \{ force: true \}\);/);
+  assert.match(main, /async function mixRecordingAction[\s\S]*?state: await broadcast\(null, \{ force: true \}\)/);
+  assert.match(main, /ipcMain\.handle\('clip:save', saveClip\)/);
+});
+
+test('stitching clears cached selection state with a forced library refresh', () => {
+  assert.match(renderer, /selectedRecordingPaths\.clear\(\); render\(result\.state, false, true\);/);
+});
+
+test('large archives render in bounded batches with an explicit continuation', () => {
+  assert.match(html, /id="archive-load-more"/);
+  assert.match(renderer, /const ARCHIVE_PAGE_SIZE = 120/);
+  assert.match(renderer, /const visibleFavorites = chronological \? archivedFavorites\.slice\(0, archiveVisibleCount\) : \[\]/);
+  assert.match(renderer, /const remainingVisibleCount = Math\.max\(0, archiveVisibleCount - visibleFavorites\.length\)/);
+  assert.match(renderer, /archiveItems\.slice\(0, remainingVisibleCount\)/);
+  assert.match(renderer, /archive-favorite-list"\)\.innerHTML = chronological \? renderFiles\(visibleFavorites/);
+  assert.match(renderer, /archiveVisibleCount \+= ARCHIVE_PAGE_SIZE/);
+  assert.match(css, /\.archive-day\s*\{[^}]*content-visibility:\s*auto/);
+});
+
+test('thumbnail loading uses native hints and a bounded renderer cache', () => {
+  assert.match(renderer, /loading="lazy" decoding="async"/);
+  assert.match(renderer, /const THUMBNAIL_CACHE_LIMIT = 160/);
+  assert.match(renderer, /while \(thumbnailCache\.size > THUMBNAIL_CACHE_LIMIT\)/);
+  assert.doesNotMatch(renderer, /document\.querySelectorAll\("\.recording-thumbnail\[data-thumbnail-path\]"\)\.forEach\(\(current\)/);
+});
+
+test('background broadcasts avoid full library snapshots without a visible client', () => {
+  assert.match(main, /function hasVisibleStateConsumer\(\)/);
+  assert.match(main, /!force && !hasVisibleStateConsumer\(\)/);
+  assert.match(main, /broadcast\(null, \{ force: true \}\)/);
 });

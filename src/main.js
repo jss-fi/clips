@@ -122,6 +122,14 @@ const recordingLibrary = createRecordingLibrary({
 });
 const { isRawRecordingName } = recordingLibrary;
 const cleanupStorage = () => recordingLibrary.cleanupStorage(ensureDirectory);
+const STORAGE_CLEANUP_INTERVAL_MS = 60 * 1000;
+let lastStorageCleanupAt = 0;
+async function cleanupStorageOnSchedule(force = false) {
+  const now = Date.now();
+  if (!force && now - lastStorageCleanupAt < STORAGE_CLEANUP_INTERVAL_MS) return;
+  await cleanupStorage();
+  lastStorageCleanupAt = Date.now();
+}
 const recentRecordings = () => recordingLibrary.recentRecordings();
 const archivedRecordings = () => recordingLibrary.archivedRecordings();
 const validateRecordingPath = filePath => recordingLibrary.validatePath(filePath);
@@ -229,7 +237,7 @@ function todayFolder() {
   return folder;
 }
 function todayKey() { return new Date().toLocaleDateString('sv-SE'); }
-async function startSession({ recording = true, replayLengthSeconds = 0 } = {}) {
+async function startSession({ recording = true, replayLengthSeconds = 0, storageCleanupFresh = false } = {}) {
   const profile = settings.gameProfiles?.[activeGames[0]?.toLowerCase()] || {};
   const captureSettings = { ...settings,
     obsRecordingQuality: profile.quality || settings.obsRecordingQuality,
@@ -248,7 +256,7 @@ async function startSession({ recording = true, replayLengthSeconds = 0 } = {}) 
       clipLengthSeconds: captureSettings.clipLengthSeconds
     });
   }
-  await cleanupStorage();
+  if (!storageCleanupFresh) await cleanupStorageOnSchedule(true);
   const wantedAudio = new Set([...(profile.audioExecutables || settings.audioExecutables), ...activeGames].map(name => name.toLowerCase()));
   const outputDirectory = todayFolder();
   const audioApplications = runningApps.filter(app => wantedAudio.has(app.name.toLowerCase()));
@@ -275,8 +283,8 @@ async function startSession({ recording = true, replayLengthSeconds = 0 } = {}) 
   if (recording) showOverlayToast('Recording started', 'recording');
 }
 
-async function startInstantReplay() {
-  await startSession({ recording: false, replayLengthSeconds: settings.instantReplayLengthSeconds });
+async function startInstantReplay({ storageCleanupFresh = false } = {}) {
+  await startSession({ recording: false, replayLengthSeconds: settings.instantReplayLengthSeconds, storageCleanupFresh });
 }
 async function finalizeSessionMetadata() {
   if (sessionMarkers.length || sessionGame) {
@@ -738,7 +746,7 @@ Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object {
 }
 async function monitor() {
   try {
-    await cleanupStorage();
+    await cleanupStorageOnSchedule();
     const running = await processes();
     runningApps = running;
     const candidates = updateCandidateHistory(
@@ -763,10 +771,10 @@ async function monitor() {
       clearTimeout(stopTimer); stopTimer = null;
       if (captureStatus.recording && sessionDate && sessionDate !== todayKey()) {
         await obs.stopSession();
-        await startSession();
+        await startSession({ storageCleanupFresh: true });
       } else if (!captureStatus.recording) {
         if (captureStatus.replayBuffer) await obs.stopSession();
-        await startSession();
+        await startSession({ storageCleanupFresh: true });
       }
     } else if (settings.autoRecord && !activeGames.length && !stopTimer && captureStatus.recording) {
       stopTimer = setTimeout(async () => {
@@ -781,9 +789,9 @@ async function monitor() {
       }, settings.stopDelaySeconds * 1000);
     } else if (settings.instantReplay && !captureStatus.recording && captureStatus.replayBuffer && sessionDate && sessionDate !== todayKey()) {
       await obs.stopSession();
-      await startInstantReplay();
+      await startInstantReplay({ storageCleanupFresh: true });
     } else if (settings.instantReplay && !captureStatus.recording && !captureStatus.replayBuffer) {
-      await startInstantReplay();
+      await startInstantReplay({ storageCleanupFresh: true });
     } else if (!settings.instantReplay && !captureStatus.recording && captureStatus.replayBuffer) {
       await obs.stopSession();
       await obs.disconnect().catch(() => {});
@@ -1041,11 +1049,19 @@ async function openWebUi() {
 function openPreferredUi() {
   return settings?.desktopWindow === false ? openWebUi() : showMainWindow();
 }
-async function broadcast() {
-  const currentState = await state();
+function hasVisibleStateConsumer() {
+  return !!(win && !win.isDestroyed() && win.isVisible()) || !!gateway?.hasEventClients();
+}
+async function broadcast(currentState = null, { force = false } = {}) {
+  if (!currentState && !force && !hasVisibleStateConsumer()) {
+    trayController.update((await obs.status()).recording);
+    return null;
+  }
+  currentState ||= await state();
   trayController.update(currentState.obs.recording);
   if (win && !win.isDestroyed()) win.webContents.send('state', currentState);
   gateway?.emit('state', currentState);
+  return currentState;
 }
 function setUpdateState(next) {
   updateState = { ...updateState, ...next, ...(next.version ? { version: displayVersion(next.version) } : {}) };
@@ -1192,7 +1208,7 @@ async function saveClip() {
     if (savedReplay && sessionGame) libraryMetadata.update(savedReplay.path, { game: sessionGame });
     lastClip = new Date().toISOString(); lastError = ''; showOverlayToast('Clip saved', 'clip-saved');
   } catch (e) { setError(e); }
-  broadcast();
+  return broadcast(null, { force: true });
 }
 
 let lastGameDisplayId = null;
@@ -1482,15 +1498,13 @@ function openRecording(filePath) {
 async function setRecordingFavorite(filePath, favorite) {
   const target = validateRecordingPath(filePath);
   recordingLibrary.setFavorite(target, favorite);
-  await broadcast();
-  return state();
+  return broadcast(null, { force: true });
 }
 
 async function updateRecordingMetadata(filePath, change) {
   const target = validateRecordingPath(filePath);
   libraryMetadata.update(target, change || {});
-  await broadcast();
-  return state();
+  return broadcast(null, { force: true });
 }
 
 async function stitchRecordings(filePaths) {
@@ -1505,8 +1519,7 @@ async function stitchRecordings(filePaths) {
   finally { fs.rmSync(manifest, { force: true }); }
   const games = [...new Set(targets.map(target => libraryMetadata.get(target).game).filter(Boolean))];
   libraryMetadata.update(outputPath, { title: 'Compilation', tags: ['compilation'], game: games.length === 1 ? games[0] : '' });
-  await broadcast();
-  return { outputPath, state: await state() };
+  return { outputPath, state: await broadcast(null, { force: true }) };
 }
 
 async function deleteRecordings(filePaths) {
@@ -1523,8 +1536,7 @@ async function deleteRecordings(filePaths) {
     recordingMediaServer.invalidate(target);
   }
   recordingLibrary.persistFavorites();
-  await broadcast();
-  return state();
+  return broadcast(null, { force: true });
 }
 
 async function listMicrophones() {
@@ -1556,8 +1568,7 @@ async function mixRecordingAction(filePath, adjustments, replace) {
     throw new Error('Stop the active recording before saving audio changes to it. You can still save a new clip.');
   }
   const outputPath = await mixRecordingAudio(target, adjustments, !!replace);
-  await broadcast();
-  return { outputPath, state: await state() };
+  return { outputPath, state: await broadcast(null, { force: true }) };
 }
 
 async function chooseFolder() {
@@ -1575,7 +1586,7 @@ async function gatewayInvoke(method, args) {
     connect: reconnectCapture,
     saveSettings: () => saveSettings(args[0], { openWebOnDisable: false }),
     toggleRecording,
-    saveClip: async () => { await saveClip(); return state(); },
+    saveClip,
     openFolder: () => shell.openPath(todayFolder()),
     openLibraryFolder: () => { ensureDirectory(settings.recordingsFolder); return shell.openPath(settings.recordingsFolder); },
     openRecording: () => openRecording(args[0]),
@@ -1704,7 +1715,7 @@ ipcMain.handle('hotkey:capture-cancel', () => {
 ipcMain.handle('capture:connect', reconnectCapture);
 ipcMain.handle('settings:save', (_event, next) => saveSettings(next));
 ipcMain.handle('recording:toggle', toggleRecording);
-ipcMain.handle('clip:save', async () => { await saveClip(); return state(); });
+ipcMain.handle('clip:save', saveClip);
 ipcMain.handle('folder:open', () => shell.openPath(todayFolder()));
 ipcMain.handle('folder:open-root', () => { ensureDirectory(settings.recordingsFolder); return shell.openPath(settings.recordingsFolder); });
 ipcMain.handle('recording:open', (_event, filePath) => openRecording(filePath));

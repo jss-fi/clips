@@ -6,7 +6,7 @@ on:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       CLIPS_HERMETIC_CHECK: '1'
     steps:
