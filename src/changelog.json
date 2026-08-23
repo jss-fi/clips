@@ -1,5 +1,12 @@
 [
   {
+    "version": "next",
+    "title": "Faster update downloads",
+    "changes": [
+      "Immutable update archives are now served through Cloudflare's edge cache, avoiding repeated long-distance R2 transfers and restoring fast parallel downloads."
+    ]
+  },
+  {
     "version": "0.6-nightly.13",
     "title": "Faster, unattended releases",
     "changes": [

@@ -4,6 +4,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-08",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "cache": {
+    "enabled": true,
+    "cross_version_cache": true
+  },
   "workers_dev": false,
   "routes": [
     { "pattern": "{{CLIPS_FRONT_DOMAIN}}", "custom_domain": true },
