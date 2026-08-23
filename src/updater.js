@@ -666,10 +666,14 @@ function validateMetadata(value) {
   return { version: value.version, url: value.url, sha512: value.sha512, size, ...(asarSha512 ? { asarSha512 } : {}) };
 }
 
-function authenticateMetadata(value, publicKey = UPDATE_PUBLIC_KEY) {
+function authenticateMetadata(value, publicKey = UPDATE_PUBLIC_KEY, expectedChannel = '') {
   if (!verifyMetadata(value, publicKey)) throw new Error('The update feed signature is invalid.');
   if (value?.asarSha512 && !verifyPackageMetadata(value, publicKey)) throw new Error('The update package signature is invalid.');
-  return validateMetadata(value);
+  const metadata = validateMetadata(value);
+  if (expectedChannel === 'stable' && parseVersion(metadata.version).prerelease.length) {
+    throw new Error('The stable update feed returned a prerelease version.');
+  }
+  return metadata;
 }
 
 function preparedUpdateMatches(prepared, metadata) {
@@ -680,7 +684,7 @@ function preparedUpdateMatches(prepared, metadata) {
     && prepared.size === metadata.size);
 }
 
-function createStagedUpdater({ app, feedUrl, onState, logger, onDiagnostic = () => {}, resourcesPath = process.resourcesPath }) {
+function createStagedUpdater({ app, feedUrl, channel = '', onState, logger, onDiagnostic = () => {}, resourcesPath = process.resourcesPath }) {
   let operation = null;
   let readyUpdate = null;
   let readyMetadata = null;
@@ -806,7 +810,7 @@ function createStagedUpdater({ app, feedUrl, onState, logger, onDiagnostic = () 
     trace('info', 'metadata request begin', { url: `${feedUrl}/latest.json` });
     const metadata = await withFetchTimeout(fetch, `${feedUrl}/latest.json`, { cache: 'no-store' }, async response => {
       if (!response.ok) throw new Error(`Update check failed (${response.status}).`);
-      return authenticateMetadata(await response.json());
+      return authenticateMetadata(await response.json(), UPDATE_PUBLIC_KEY, channel);
     }, METADATA_TIMEOUT_MS);
     trace('info', 'metadata authenticated', { version: metadata.version, url: metadata.url, size: metadata.size, hasAsarHash: !!metadata.asarSha512 });
     if (compareVersions(metadata.version, app.getVersion()) <= 0) {
@@ -845,7 +849,7 @@ function createStagedUpdater({ app, feedUrl, onState, logger, onDiagnostic = () 
     try {
       currentMetadata = await withFetchTimeout(fetch, `${feedUrl}/latest.json`, { cache: 'no-store' }, async response => {
         if (!response.ok) throw new Error(`Update confirmation failed (${response.status}).`);
-        return authenticateMetadata(await response.json());
+        return authenticateMetadata(await response.json(), UPDATE_PUBLIC_KEY, channel);
       }, METADATA_TIMEOUT_MS);
     } catch (error) {
       emit({ status: 'error', percent: 0, message: `Could not confirm this update is still available: ${error?.message || error}` });

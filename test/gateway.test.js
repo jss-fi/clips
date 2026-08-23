@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const { createGateway } = require('../src/gateway');
 
 const origin = 'https://clips.jss.fi';
@@ -22,6 +23,17 @@ async function withGateway(run) {
   const port = await gateway.start();
   try { await run({ gateway, port, calls }); }
   finally { gateway.close(); }
+}
+
+function localWebAssets() {
+  const source = path.join(__dirname, '..', 'src');
+  return {
+    index: path.join(source, 'index.html'),
+    styles: path.join(source, 'styles.css'),
+    renderer: path.join(source, 'renderer.js'),
+    web: path.join(__dirname, '..', 'clips-worker', 'src', 'web.js'),
+    changelog: path.join(source, 'changelog.json')
+  };
 }
 
 test('gateway only accepts the configured website origin', async () => withGateway(async ({ port }) => {
@@ -92,6 +104,59 @@ test('gateway never shares an in-flight pairing approval with another origin', a
     assert.deepEqual(await second.json(), { error: 'Another browser connection is awaiting approval.' });
     approve(true);
     assert.equal((await first).status, 200);
+  } finally { gateway.close(); }
+});
+
+test('gateway clears a rejected pairing approval without an unhandled rejection', async () => {
+  const unhandled = [];
+  const onUnhandled = error => unhandled.push(error);
+  process.on('unhandledRejection', onUnhandled);
+  let approvals = 0;
+  const gateway = createGateway({
+    token: 'a-secure-test-token',
+    port: 0,
+    allowedOrigins: [origin],
+    approvePairing: async () => {
+      approvals += 1;
+      throw new Error('Approval dialog failed.');
+    },
+    invoke: async () => ({})
+  });
+  const port = await gateway.start();
+  const pair = () => fetch(`http://127.0.0.1:${port}/v1/pair`, {
+    method: 'POST',
+    headers: { Origin: origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientName: 'Browser' })
+  });
+  try {
+    assert.equal((await pair()).status, 500);
+    assert.equal((await pair()).status, 500);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(approvals, 2);
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.removeListener('unhandledRejection', onUnhandled);
+    gateway.close();
+  }
+});
+
+test('gateway prevents other websites from framing its local browser UI', async () => {
+  const gateway = createGateway({
+    token: 'a-secure-test-token',
+    port: 0,
+    allowedOrigins: [origin],
+    approvePairing: async () => true,
+    invoke: async () => ({}),
+    webAssets: localWebAssets()
+  });
+  const port = await gateway.start();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/app/`, {
+      headers: { 'Sec-Fetch-Dest': 'iframe', 'Sec-Fetch-Site': 'cross-site' }
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('x-frame-options'), 'DENY');
+    assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   } finally { gateway.close(); }
 });
 

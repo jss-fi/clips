@@ -4,6 +4,10 @@ This Worker accepts the opt-in telemetry documented in the root README. Each sta
 
 The endpoint accepts only a strict 64 KiB JSON schema. It does not store request headers or IP addresses. Cloudflare still processes normal connection metadata before the request reaches the Worker.
 
+Valid events are rate limited and pass through the front Worker's globally coordinated write budget before R2 writes. The connecting IP is used only as an ephemeral rate-limit key and is not included in stored telemetry.
+
+Deploy the front Worker first, and do not remove its exported `TelemetryAdmission` class while this rollback Worker is deployed.
+
 `installations/` contains one current record per UUID. R2 object custom metadata includes `appVersion`, so the records can be grouped without opening diagnostic error objects. This is an installation/launch count, not a CDN download count.
 
 ```powershell

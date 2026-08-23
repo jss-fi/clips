@@ -14,8 +14,19 @@ type VersionEvent = {
   error?: { message: string; log: string };
 };
 
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+type TelemetryControls = {
+  client: Pick<RateLimit, 'limit'>;
+  service: Pick<RateLimit, 'limit'>;
+  admission: { getByName(name: string): unknown };
+};
+
+type TelemetryAdmissionStub = { admit(writeCost: number): Promise<boolean> };
+
+function json(body: unknown, status = 200, additionalHeaders: HeadersInit = {}): Response {
+  const headers = new Headers(additionalHeaders);
+  headers.set('cache-control', 'no-store');
+  headers.set('x-content-type-options', 'nosniff');
+  return Response.json(body, { status, headers });
 }
 
 function text(value: unknown, maximum: number): string | null {
@@ -74,47 +85,66 @@ function validate(input: unknown): VersionEvent | null {
   return { ...value, runtimeVersion } as VersionEvent;
 }
 
-async function serveTelemetry(request: Request, telemetry: R2Bucket): Promise<Response> {
-    const url = new URL(request.url);
-    if (request.method !== 'POST' || url.pathname !== '/v1/events') return json({ error: 'Not found' }, 404);
-    if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return json({ error: 'JSON required' }, 415);
-    const declared = Number(request.headers.get('content-length') || 0);
-    if (declared > MAX_BODY_BYTES) return json({ error: 'Payload too large' }, 413);
-    const bytes = await readLimitedBody(request);
-    if (!bytes) return json({ error: 'Payload too large' }, 413);
-    let parsed: unknown;
-    try { parsed = JSON.parse(new TextDecoder().decode(bytes)); }
-    catch { return json({ error: 'Invalid JSON' }, 400); }
-    const event = validate(parsed);
-    if (!event) return json({ error: 'Invalid event' }, 400);
+async function serveTelemetry(request: Request, telemetry: R2Bucket, controls: TelemetryControls): Promise<Response> {
+  const url = new URL(request.url);
+  if (request.method !== 'POST' || url.pathname !== '/v1/events') return json({ error: 'Not found' }, 404);
+  if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return json({ error: 'JSON required' }, 415);
+  const declared = Number(request.headers.get('content-length') || 0);
+  if (declared > MAX_BODY_BYTES) return json({ error: 'Payload too large' }, 413);
 
-    const receivedAt = new Date().toISOString();
-    const current = JSON.stringify({
-      schemaVersion: event.schemaVersion,
-      installationId: event.installationId,
-      mode: event.mode,
-      appVersion: event.appVersion,
-      runtimeVersion: event.runtimeVersion,
-      ...(event.system ? { system: event.system } : {}),
-      receivedAt
+  const clientKey = request.headers.get('CF-Connecting-IP');
+  if (!clientKey) return json({ error: 'Client identity unavailable' }, 400);
+  const clientLimit = await controls.client.limit({ key: clientKey });
+  if (!clientLimit.success) return json({ error: 'Rate limit exceeded' }, 429, { 'retry-after': '60' });
+
+  const bytes = await readLimitedBody(request);
+  if (!bytes) return json({ error: 'Payload too large' }, 413);
+  let parsed: unknown;
+  try { parsed = JSON.parse(new TextDecoder().decode(bytes)); }
+  catch { return json({ error: 'Invalid JSON' }, 400); }
+  const event = validate(parsed);
+  if (!event) return json({ error: 'Invalid event' }, 400);
+
+  const serviceLimit = await controls.service.limit({ key: 'telemetry' });
+  if (!serviceLimit.success) return json({ error: 'Rate limit exceeded' }, 429, { 'retry-after': '60' });
+  const writeCost = event.event === 'error' ? 2 : 1;
+  // Wrangler cannot infer RPC methods for the legacy Worker's cross-script binding.
+  const admission = controls.admission.getByName('global') as TelemetryAdmissionStub;
+  if (!await admission.admit(writeCost)) {
+    return json({ error: 'Rate limit exceeded' }, 429, { 'retry-after': '60' });
+  }
+
+  const receivedAt = new Date().toISOString();
+  const current = JSON.stringify({
+    schemaVersion: event.schemaVersion,
+    installationId: event.installationId,
+    mode: event.mode,
+    appVersion: event.appVersion,
+    runtimeVersion: event.runtimeVersion,
+    ...(event.system ? { system: event.system } : {}),
+    receivedAt
+  });
+  await telemetry.put(`installations/${event.installationId}.json`, current, {
+    httpMetadata: { contentType: 'application/json' },
+    customMetadata: { appVersion: event.appVersion, mode: event.mode, receivedAt }
+  });
+  if (event.event === 'error') {
+    const day = receivedAt.slice(0, 10);
+    await telemetry.put(`errors/${day}/${event.installationId}/${crypto.randomUUID()}.json`, JSON.stringify({ ...event, receivedAt }), {
+      httpMetadata: { contentType: 'application/json' }
     });
-    await telemetry.put(`installations/${event.installationId}.json`, current, {
-      httpMetadata: { contentType: 'application/json' },
-      customMetadata: { appVersion: event.appVersion, mode: event.mode, receivedAt }
-    });
-    if (event.event === 'error') {
-      const day = receivedAt.slice(0, 10);
-      await telemetry.put(`errors/${day}/${event.installationId}/${crypto.randomUUID()}.json`, JSON.stringify({ ...event, receivedAt }), {
-        httpMetadata: { contentType: 'application/json' }
-      });
-    }
-    return json({ accepted: true }, 202);
+  }
+  return json({ accepted: true }, 202);
 }
 
 export { serveTelemetry };
 
 export default {
   fetch(request, env): Promise<Response> {
-    return serveTelemetry(request, env.TELEMETRY);
+    return serveTelemetry(request, env.TELEMETRY, {
+      client: env.TELEMETRY_CLIENT_RATE_LIMIT,
+      service: env.TELEMETRY_SERVICE_RATE_LIMIT,
+      admission: env.TELEMETRY_ADMISSION
+    });
   }
 } satisfies ExportedHandler<Env>;

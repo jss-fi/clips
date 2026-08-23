@@ -7,5 +7,12 @@
   "workers_dev": false,
   "routes": [{ "pattern": "{{CLIPS_LEGACY_TELEMETRY_DOMAIN}}", "custom_domain": true }],
   "r2_buckets": [{ "binding": "TELEMETRY", "bucket_name": "{{CLIPS_TELEMETRY_BUCKET}}" }],
+  "durable_objects": {
+    "bindings": [{ "name": "TELEMETRY_ADMISSION", "class_name": "TelemetryAdmission", "script_name": "{{CLIPS_FRONT_WORKER}}" }]
+  },
+  "ratelimits": [
+    { "name": "TELEMETRY_CLIENT_RATE_LIMIT", "namespace_id": "32191001", "simple": { "limit": 30, "period": 60 } },
+    { "name": "TELEMETRY_SERVICE_RATE_LIMIT", "namespace_id": "32191002", "simple": { "limit": 300, "period": 60 } }
+  ],
   "observability": { "enabled": true, "head_sampling_rate": 1 }
 }

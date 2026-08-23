@@ -9,6 +9,10 @@ This is the only Worker required for current Clips builds. It owns the shared pr
 
 The legacy hostnames are attached to this Worker and permanently redirect to their corresponding paths on the primary hostname. The old standalone Worker source remains under `legacy/` only as a rollback reference.
 
+Telemetry writes are guarded by shared per-client and service-level rate-limit bindings, then admitted through one strongly consistent Durable Object with a hard global R2-write budget. Keep the matching namespace IDs identical in the front-door and legacy telemetry Worker configurations so requests cannot bypass the first-layer limits by switching hostnames.
+
+Deploy the front-door Worker before deploying the legacy telemetry Worker. The legacy binding points to the front Worker's `TelemetryAdmission` class, so retain that exported class for as long as the legacy Worker remains available.
+
 ```powershell
 npm install
 npm run types
