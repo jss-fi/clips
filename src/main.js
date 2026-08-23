@@ -177,6 +177,11 @@ function persistentRuntimeFile(relative, companions = []) {
   mediaRuntimeReady = false;
   return '';
 }
+function persistentOptionalRuntimeFile(relative) {
+  if (!app.isPackaged || !mediaRuntimeReady) return '';
+  const file = path.join(persistentRuntimeRoot, relative);
+  return isNonEmptyFile(file) ? file : '';
+}
 async function waitForMediaRuntime() {
   await runtimeSetupPromise;
   if (app.isPackaged && !packagedRuntimeReady()) {
@@ -218,7 +223,7 @@ function ffmpegPath() {
 }
 function mpvPath() {
   const candidates = [
-    persistentRuntimeFile(path.join('mpv', 'mpv.exe')),
+    persistentOptionalRuntimeFile(path.join('mpv', 'mpv.exe')),
     path.join(process.resourcesPath, 'mpv', 'mpv.exe'),
     path.join(__dirname, '..', 'vendor', 'mpv', 'mpv.exe')
   ];
