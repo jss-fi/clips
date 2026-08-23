@@ -11,12 +11,15 @@ The legacy hostnames are attached to this Worker and permanently redirect to the
 
 Telemetry writes are guarded by shared per-client and service-level rate-limit bindings, then admitted through one strongly consistent Durable Object with a hard global R2-write budget. Keep the matching namespace IDs identical in the front-door and legacy telemetry Worker configurations so requests cannot bypass the first-layer limits by switching hostnames.
 
-Deploy the front-door Worker before deploying the legacy telemetry Worker. The legacy binding points to the front Worker's `TelemetryAdmission` class, so retain that exported class for as long as the legacy Worker remains available.
+The 300-write fixed-minute ceiling is deliberately a hard cost cap, not a fairness guarantee. Distributed callers can exhaust it and cause otherwise valid telemetry to receive `429` responses until the next minute. Do not raise or remove the cap merely to improve telemetry availability without reviewing the resulting worst-case R2 cost.
+
+Deploy the front-door Worker before deploying the legacy telemetry Worker. The legacy binding points to the front Worker's `TelemetryAdmission` class. Rollbacks must therefore preserve a deployed front Worker exporting that class until the legacy Worker has been removed or redeployed without the cross-script binding; rolling the front Worker back to a version without the export first breaks legacy telemetry admission.
 
 ```powershell
 npm install
 npm run types
 npm run check
+npm run test:integration
 npm run deploy
 ```
 
