@@ -1,0 +1,13 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "clips-telemetry-admission-integration",
+  "main": "telemetry-admission-worker.ts",
+  "compatibility_date": "2026-08-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "TELEMETRY_ADMISSION", "class_name": "TelemetryAdmission" }]
+  },
+  "exports": {
+    "TelemetryAdmission": { "type": "durable-object", "storage": "sqlite" }
+  }
+}
