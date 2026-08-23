@@ -74,8 +74,13 @@ test('main-process hot paths use cached runtime readiness with setup failures is
   const mpvPathStart = main.indexOf('function mpvPath()');
   const mpvPathEnd = main.indexOf('function mpvFullscreenScriptPath()', mpvPathStart);
   const mpvPathSource = main.slice(mpvPathStart, mpvPathEnd);
-  assert.match(mpvPathSource, /persistentRuntimeFile\(path\.join\('mpv', 'mpv\.exe'\)\)/);
+  assert.match(mpvPathSource, /persistentOptionalRuntimeFile\(path\.join\('mpv', 'mpv\.exe'\)\)/);
   assert.doesNotMatch(mpvPathSource, /path\.join\(persistentRuntimeRoot/);
+  const optionalLookupStart = main.indexOf('function persistentOptionalRuntimeFile');
+  const optionalLookupEnd = main.indexOf('async function waitForMediaRuntime', optionalLookupStart);
+  const optionalLookupSource = main.slice(optionalLookupStart, optionalLookupEnd);
+  assert.match(optionalLookupSource, /!app\.isPackaged \|\| !mediaRuntimeReady/);
+  assert.doesNotMatch(optionalLookupSource, /mediaRuntimeReady\s*=/);
   assert.match(main, /async function startMpvSession[\s\S]*?await waitForMediaRuntime\(\)/);
   assert.match(main, /async function openRecording[\s\S]*?await waitForMediaRuntime\(\)/);
   assert.match(main, /ipcMain\.handle\('mpv:fullscreen', async[\s\S]*?await waitForMediaRuntime\(\)/);
