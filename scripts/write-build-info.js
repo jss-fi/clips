@@ -2,11 +2,20 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { loadProjectEnv } = require('./env');
+const { RUNTIME_VERSION, buildRuntimeComponentManifest } = require('../src/runtime');
 
 const target = path.join(__dirname, '..', 'src', 'build-info.json');
 const releaseConfigTarget = path.join(__dirname, '..', 'src', 'release-config.json');
 const runtimeAbiTarget = path.join(__dirname, '..', 'src', 'runtime-abi.json');
+const vendorRoot = path.join(__dirname, '..', 'vendor');
 const bundledObs = path.join(__dirname, '..', 'vendor', 'libobs', 'bin', '64bit', 'obs.dll');
+
+function runtimeComponentsFromResources(resourcesPath = vendorRoot) {
+  return buildRuntimeComponentManifest(
+    resourcesPath,
+    path.join(resourcesPath, '.manifest-runtime', `v${RUNTIME_VERSION}`)
+  );
+}
 
 function verifyRuntimeAbi({ manifestPath = runtimeAbiTarget, obsPath = bundledObs } = {}) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -38,7 +47,10 @@ function releaseConfigFromEnv(env) {
 function writeBuildInfo(env = loadProjectEnv()) {
   const runtimeAbi = verifyRuntimeAbi();
   console.log(`Runtime ABI v${runtimeAbi.runtimeVersion}: ${runtimeAbi.obsSha256}`);
-  const buildInfo = { buildTime: new Date().toISOString() };
+  const buildInfo = {
+    buildTime: new Date().toISOString(),
+    runtimeComponents: runtimeComponentsFromResources()
+  };
   fs.writeFileSync(target, `${JSON.stringify(buildInfo, null, 2)}\n`);
   console.log(`Build time: ${buildInfo.buildTime}`);
   const releaseConfig = releaseConfigFromEnv(env);
@@ -53,4 +65,4 @@ function writeBuildInfo(env = loadProjectEnv()) {
 
 if (require.main === module) writeBuildInfo();
 
-module.exports = { releaseConfigFromEnv, verifyRuntimeAbi, writeBuildInfo };
+module.exports = { releaseConfigFromEnv, runtimeComponentsFromResources, verifyRuntimeAbi, writeBuildInfo };
