@@ -7,7 +7,8 @@ const DAY_FOLDER = /^\d{4}-\d{2}-\d{2}$/;
 function isRawRecordingName(name) {
   return VIDEO_EXTENSION.test(name)
     && !/^Replay(?:[ _-]|$)/i.test(name)
-    && !/-trimmed(?:-\d+)?(?=\.[^.]+$)/i.test(name);
+    && !/^Compilation-/i.test(name)
+    && !/-(?:trimmed|mixed)(?:-\d+)?(?=\.[^.]+$)/i.test(name);
 }
 
 function createRecordingLibrary({ getSettings, getMetadata, favoritesPath, onDelete = () => {}, today = () => new Date().toLocaleDateString('sv-SE') }) {

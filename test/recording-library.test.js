@@ -65,13 +65,32 @@ test('age cleanup deletes only expired raw footage and preserves favorites and e
   const favorite = recording(recordingsFolder, '2026-08-14', 'Favorite.mkv');
   const replay = recording(recordingsFolder, '2026-08-14', 'Replay 1.mkv');
   const trimmed = recording(recordingsFolder, '2026-08-14', 'Recording-trimmed.mkv');
+  const mixed = recording(recordingsFolder, '2026-08-14', 'Recording-mixed-2.mkv');
+  const compilation = recording(recordingsFolder, '2026-08-14', 'Compilation-1724350000000.mkv');
   const current = recording(recordingsFolder, '2026-08-16', 'Recording.mkv');
   library.setFavorite(favorite, true);
 
   await library.cleanupStorage(folder => fs.mkdirSync(folder, { recursive: true }));
 
   assert.equal(fs.existsSync(expired), false);
-  for (const preserved of [favorite, replay, trimmed, current]) assert.equal(fs.existsSync(preserved), true);
+  for (const preserved of [favorite, replay, trimmed, mixed, compilation, current]) assert.equal(fs.existsSync(preserved), true);
+});
+
+test('disk cleanup excludes derived exports from the raw-footage byte limit', async t => {
+  const { recordingsFolder, library } = fixture({
+    storageCleanupMode: 'disk',
+    maxDiskUsagePercent: 99,
+    maxRawRecordingGigabytes: 1
+  });
+  const raw = recording(recordingsFolder, '2026-08-14', 'Recording.mkv');
+  const mixed = recording(recordingsFolder, '2026-08-14', 'Recording-mixed.mkv');
+  const compilation = recording(recordingsFolder, '2026-08-14', 'Compilation-1724350000000.mkv');
+  for (const file of [raw, mixed, compilation]) fs.truncateSync(file, 600 * 1024 ** 2);
+  t.mock.method(fs.promises, 'statfs', async () => ({ blocks: 100, bavail: 50 }));
+
+  await library.cleanupStorage(folder => fs.mkdirSync(folder, { recursive: true }));
+
+  for (const preserved of [raw, mixed, compilation]) assert.equal(fs.existsSync(preserved), true);
 });
 
 test('disk cleanup scans raw recordings once while deleting multiple files', async t => {
@@ -117,9 +136,18 @@ test('recording path validation rejects missing and outside files', () => {
   assert.throws(() => library.validatePath(path.join(recordingsFolder, 'missing.mkv')), /no longer exists/);
 });
 
-test('raw recording classification excludes replays and derived trims', () => {
+test('raw recording classification excludes replays and generated exports', () => {
   assert.equal(isRawRecordingName('Recording.mkv'), true);
   assert.equal(isRawRecordingName('Replay-123.mkv'), false);
   assert.equal(isRawRecordingName('Recording-trimmed-2.mp4'), false);
+  assert.equal(isRawRecordingName('Compilation-1724350000000.mkv'), false);
+  assert.equal(isRawRecordingName('compilation-123.MP4'), false);
+  assert.equal(isRawRecordingName('Recording-mixed.mov'), false);
+  assert.equal(isRawRecordingName('Recording-mixed-10.flv'), false);
+  assert.equal(isRawRecordingName('Recording-mixed-mixed-2.webm'), false);
+  assert.equal(isRawRecordingName('Compilation.mkv'), true);
+  assert.equal(isRawRecordingName('My-Compilation-123.mkv'), true);
+  assert.equal(isRawRecordingName('Recording-mixed-up.mkv'), true);
+  assert.equal(isRawRecordingName('Recording-mixed-2-extra.mkv'), true);
   assert.equal(isRawRecordingName('notes.txt'), false);
 });

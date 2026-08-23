@@ -602,6 +602,12 @@ async function cleanupOldVersions(app) {
   const versions = path.join(root, 'app-versions');
   const active = readActiveVersion(app);
   const protectedDirectories = active ? [active.directory] : [];
+  const previous = active?.state === 'pending' ? active.previous : null;
+  const previousVersion = previous?.type === 'installed' ? '' : previous?.version;
+  const previousDirectory = previous?.directory || previousVersion;
+  if (parseVersion(previousVersion) && isVersionDirectory(previousDirectory, previousVersion)) {
+    protectedDirectories.push(previousDirectory);
+  }
   const runningDirectory = path.basename(path.dirname(process.execPath));
   const runningParent = path.resolve(path.dirname(path.dirname(process.execPath)));
   if (runningParent.toLowerCase() === path.resolve(versions).toLowerCase()) {
@@ -903,6 +909,7 @@ function createStagedUpdater({ app, feedUrl, channel = '', onState, logger, onDi
 module.exports = {
   compareVersions,
   cleanupOldVersionDirectories,
+  cleanupOldVersions,
   cleanupStalePreparations,
   cleanupInvalidPreparedVersions,
   isPreparationDirectory,

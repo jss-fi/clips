@@ -81,17 +81,100 @@ function runtimeHashes(root) {
   ]));
 }
 
-function hasRequiredFiles(root) {
+function isNonEmptyFile(filePath) {
   try {
-    return REQUIRED_FILES.every(relative => fs.statSync(path.join(root, relative)).size > 0);
+    const stat = fs.statSync(filePath);
+    return stat.isFile() && stat.size > 0;
   } catch {
     return false;
   }
 }
 
+function hasRequiredRuntimeFiles(root) {
+  return REQUIRED_FILES.every(relative => isNonEmptyFile(path.join(root, relative)));
+}
+
+function bundledFileInstalled(source, destination) {
+  let sourceStat;
+  try { sourceStat = fs.statSync(source); }
+  catch (error) { return error?.code === 'ENOENT'; }
+  try {
+    const destinationStat = fs.statSync(destination);
+    return sourceStat.isFile()
+      && destinationStat.isFile()
+      && sourceStat.size === destinationStat.size;
+  } catch {
+    return false;
+  }
+}
+
+function bundledTreeInstalled(source, destination) {
+  let entries;
+  try { entries = fs.readdirSync(source, { withFileTypes: true }); }
+  catch (error) { return error?.code === 'ENOENT'; }
+  return entries.every(entry => {
+    const sourceEntry = path.join(source, entry.name);
+    const destinationEntry = path.join(destination, entry.name);
+    if (entry.isDirectory()) return bundledTreeInstalled(sourceEntry, destinationEntry);
+    return entry.isFile() && bundledFileInstalled(sourceEntry, destinationEntry);
+  });
+}
+
+function supplementalComponentsInstalled(resourcesPath, root) {
+  const microphoneFilters = path.join(resourcesPath, 'microphone-filters');
+  const installedPlugins = path.join(root, 'libobs', 'obs-plugins', '64bit');
+  const installedPluginData = path.join(root, 'libobs', 'data', 'obs-plugins');
+  const files = [
+    [
+      path.join(resourcesPath, 'encoder-probes', 'obs-amf-test.exe'),
+      path.join(root, 'libobs', 'bin', '64bit', 'obs-amf-test.exe')
+    ],
+    [
+      path.join(microphoneFilters, 'obs-filters.dll'),
+      path.join(installedPlugins, 'obs-filters.dll')
+    ],
+    [
+      path.join(microphoneFilters, 'nv-filters.dll'),
+      path.join(installedPlugins, 'nv-filters.dll')
+    ]
+  ];
+  const bundledMpv = path.join(resourcesPath, 'mpv', 'mpv.exe');
+  const installedMpv = path.join(root, 'mpv', 'mpv.exe');
+  const previousMpv = path.join(path.dirname(root), 'v1', 'mpv', 'mpv.exe');
+  const mpvInstalled = fs.existsSync(bundledMpv)
+    ? bundledFileInstalled(bundledMpv, installedMpv)
+    : (!fs.existsSync(previousMpv) || isNonEmptyFile(installedMpv));
+  const filterDataInstalled = bundledTreeInstalled(
+    path.join(microphoneFilters, 'data'),
+    path.join(installedPluginData, 'obs-filters')
+  );
+  const nvidiaFilterDataInstalled = bundledTreeInstalled(
+    path.join(microphoneFilters, 'nv-data'),
+    path.join(installedPluginData, 'nv-filters')
+  );
+  return files.every(([source, destination]) => bundledFileInstalled(source, destination))
+    && filterDataInstalled
+    && nvidiaFilterDataInstalled
+    && mpvInstalled;
+}
+
+function readRuntimeManifest(root) {
+  try { return JSON.parse(fs.readFileSync(manifestPath(root), 'utf8')); }
+  catch { return null; }
+}
+
+async function writeRuntimeManifest(root, applicationVersion = '') {
+  await fs.promises.writeFile(manifestPath(root), `${JSON.stringify({
+    version: RUNTIME_VERSION,
+    installedAt: new Date().toISOString(),
+    ...(applicationVersion ? { applicationVersion } : {}),
+    files: runtimeHashes(root)
+  }, null, 2)}\n`);
+}
+
 function isRuntimeReady(root) {
   try {
-    const manifest = JSON.parse(fs.readFileSync(manifestPath(root), 'utf8'));
+    const manifest = readRuntimeManifest(root);
     return manifest.version === RUNTIME_VERSION
       && REQUIRED_FILES.every(relative => {
         const file = path.join(root, relative);
@@ -197,17 +280,17 @@ async function copyPrivateLibobs(source, destination) {
   );
 }
 
-async function ensureRuntimeInstalled(resourcesPath, root) {
+async function ensureRuntimeInstalled(resourcesPath, root, applicationVersion = '') {
+  applicationVersion = String(applicationVersion || '');
+  const installedApplicationVersion = readRuntimeManifest(root)?.applicationVersion || '';
   let installed = false;
-  if (!isRuntimeReady(root) && isRuntimeRepairableFromBundledComponents(resourcesPath, root)) {
-    await fs.promises.writeFile(manifestPath(root), `${JSON.stringify({
-      version: RUNTIME_VERSION,
-      installedAt: new Date().toISOString(),
-      files: runtimeHashes(root)
-    }, null, 2)}\n`);
+  let rebuilt = false;
+  let ready = isRuntimeReady(root);
+  if (!ready && isRuntimeRepairableFromBundledComponents(resourcesPath, root)) {
     installed = true;
+    ready = true;
   }
-  if (!isRuntimeReady(root)) {
+  if (!ready) {
     const previousRoot = path.join(path.dirname(root), 'v1');
     const componentSource = name => {
       const bundled = path.join(resourcesPath, name);
@@ -259,24 +342,30 @@ async function ensureRuntimeInstalled(resourcesPath, root) {
           throw new Error(`Installed media runtime is incomplete: ${relative}`);
         }
       }
-      await fs.promises.writeFile(manifestPath(stagedRoot), `${JSON.stringify({
-        version: RUNTIME_VERSION,
-        installedAt: new Date().toISOString(),
-        files: runtimeHashes(stagedRoot)
-      }, null, 2)}\n`);
+      await writeRuntimeManifest(stagedRoot);
       await replacePathAtomically(stagedRoot, root);
     } finally {
       await fs.promises.rm(stagedRoot, { recursive: true, force: true });
     }
     installed = true;
+    rebuilt = true;
+    ready = true;
   }
+
+  // Application-only packages can carry corrected native components without a
+  // runtime ABI bump. Apply each package's components once, then use the
+  // manifest revision to avoid recopying and rehashing them on every launch.
+  const refreshBundledComponents = rebuilt
+    || !applicationVersion
+    || installedApplicationVersion !== applicationVersion
+    || !supplementalComponentsInstalled(resourcesPath, root);
 
   // Slim application updates can ship a corrected native capture host without
   // redownloading the complete OBS runtime. Refresh it even when the runtime
   // version itself is already installed.
   const bundledCaptureHost = path.join(resourcesPath, 'capture-host', 'clips-capture-host.exe');
   const installedCaptureHost = path.join(root, 'libobs', 'bin', '64bit', 'clips-capture-host.exe');
-  if (fs.existsSync(bundledCaptureHost)) {
+  if (refreshBundledComponents && fs.existsSync(bundledCaptureHost)) {
     await fs.promises.mkdir(path.dirname(installedCaptureHost), { recursive: true });
     await copyFileAtomically(bundledCaptureHost, installedCaptureHost);
     installed = true;
@@ -285,7 +374,7 @@ async function ensureRuntimeInstalled(resourcesPath, root) {
   // OBS probes AMD AMF in a helper process before registering its hardware
   // encoders. Older v2 runtimes omitted this helper, so add it in place.
   const bundledAmfProbe = path.join(resourcesPath, 'encoder-probes', 'obs-amf-test.exe');
-  if (fs.existsSync(bundledAmfProbe)) {
+  if (refreshBundledComponents && fs.existsSync(bundledAmfProbe)) {
     const installedAmfProbe = path.join(root, 'libobs', 'bin', '64bit', 'obs-amf-test.exe');
     await fs.promises.mkdir(path.dirname(installedAmfProbe), { recursive: true });
     await copyFileAtomically(bundledAmfProbe, installedAmfProbe);
@@ -296,7 +385,7 @@ async function ensureRuntimeInstalled(resourcesPath, root) {
   // plugin and its data alongside the capture host.
   const bundledMicrophoneFilters = path.join(resourcesPath, 'microphone-filters');
   const bundledFilterDll = path.join(bundledMicrophoneFilters, 'obs-filters.dll');
-  if (fs.existsSync(bundledFilterDll)) {
+  if (refreshBundledComponents && fs.existsSync(bundledFilterDll)) {
     const installedPlugins = path.join(root, 'libobs', 'obs-plugins', '64bit');
     await fs.promises.mkdir(installedPlugins, { recursive: true });
     for (const name of ['obs-filters.dll', 'nv-filters.dll']) {
@@ -325,7 +414,7 @@ async function ensureRuntimeInstalled(resourcesPath, root) {
   const installedLibmpv = path.join(root, 'libmpv');
   const bundledMpvHost = path.join(bundledLibmpv, 'mpv-host.exe');
   const bundledMpvLibrary = path.join(bundledLibmpv, 'libmpv-2.dll');
-  if (fs.existsSync(bundledMpvHost) && fs.existsSync(bundledMpvLibrary)) {
+  if (refreshBundledComponents && fs.existsSync(bundledMpvHost) && fs.existsSync(bundledMpvLibrary)) {
     const stagedLibmpv = `${installedLibmpv}.install-${process.pid}-${crypto.randomUUID()}`;
     try {
       await fs.promises.mkdir(stagedLibmpv, { recursive: true });
@@ -350,25 +439,26 @@ async function ensureRuntimeInstalled(resourcesPath, root) {
   const installedMpv = path.join(root, 'mpv', 'mpv.exe');
   const previousMpv = path.join(path.dirname(root), 'v1', 'mpv', 'mpv.exe');
   const mpvSource = fs.existsSync(bundledMpv) ? bundledMpv : previousMpv;
-  if (fs.existsSync(mpvSource) && !fs.existsSync(installedMpv)) {
+  const installedMpvCurrent = bundledMpv === mpvSource
+    ? bundledFileInstalled(mpvSource, installedMpv)
+    : isNonEmptyFile(installedMpv);
+  if (refreshBundledComponents && fs.existsSync(mpvSource) && !installedMpvCurrent) {
     await fs.promises.mkdir(path.dirname(installedMpv), { recursive: true });
-    await fs.promises.copyFile(mpvSource, installedMpv);
+    await copyFileAtomically(mpvSource, installedMpv);
     installed = true;
   }
-  if (installed && hasRequiredFiles(root)) {
-    await fs.promises.writeFile(manifestPath(root), `${JSON.stringify({
-      version: RUNTIME_VERSION,
-      installedAt: new Date().toISOString(),
-      files: runtimeHashes(root)
-    }, null, 2)}\n`);
+  if (!ready || !hasRequiredRuntimeFiles(root)) {
+    throw new Error('The installed media runtime is incomplete.');
   }
-  return { installed, root };
+  if (installed) await writeRuntimeManifest(root, applicationVersion);
+  return { installed, root, ready: true };
 }
 
 module.exports = {
   RUNTIME_VERSION,
   REQUIRED_FILES,
   runtimeRoot,
+  hasRequiredRuntimeFiles,
   isRuntimeReady,
   isRuntimeRepairableFromBundledComponents,
   ensureRuntimeInstalled

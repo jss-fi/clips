@@ -8,6 +8,7 @@ const { signMetadata, signPackageMetadata } = require('../scripts/update-signatu
 const {
   compareVersions,
   cleanupOldVersionDirectories,
+  cleanupOldVersions,
   cleanupStalePreparations,
   cleanupInvalidPreparedVersions,
   isPreparationDirectory,
@@ -292,6 +293,44 @@ test('authenticateMetadata accepts only metadata signed by the trusted key', () 
   assert.equal(authenticateMetadata(metadata, publicKey).version, '0.1.12');
   assert.throws(() => authenticateMetadata({ ...metadata, size: 124 }, publicKey), /signature/i);
   assert.throws(() => authenticateMetadata({ ...metadata, signature: '' }, publicKey), /signature/i);
+});
+
+test('startup cleanup preserves the pending update\'s explicit rollback package', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clips-rollback-retention-'));
+  const originalLocalAppData = process.env.LOCALAPPDATA;
+  process.env.LOCALAPPDATA = root;
+  t.after(() => {
+    if (originalLocalAppData === undefined) delete process.env.LOCALAPPDATA;
+    else process.env.LOCALAPPDATA = originalLocalAppData;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const previousVersion = '0.5.1-nightly.10.aaaaaaaa';
+  const strayVersion = '0.5.1-nightly.11.bbbbbbbb';
+  const activeVersion = '0.5.1-nightly.12.cccccccc';
+  const previousDirectory = `${previousVersion}.app-previous`;
+  const strayDirectory = `${strayVersion}.app-withdrawn`;
+  const activeDirectory = `${activeVersion}.app-active`;
+  const previous = createPreparedVersion(root, previousVersion, previousDirectory);
+  const stray = createPreparedVersion(root, strayVersion, strayDirectory);
+  const active = createPreparedVersion(root, activeVersion, activeDirectory);
+  fs.utimesSync(previous, new Date('2026-08-20'), new Date('2026-08-20'));
+  fs.utimesSync(active, new Date('2026-08-21'), new Date('2026-08-21'));
+  fs.utimesSync(stray, new Date('2026-08-22'), new Date('2026-08-22'));
+  fs.writeFileSync(path.join(root, 'jss-clips', 'active-app.json'), JSON.stringify({
+    version: activeVersion,
+    directory: activeDirectory,
+    state: 'pending',
+    bootAttempts: 1,
+    previous: { version: previousVersion, directory: previousDirectory }
+  }));
+  const app = updateTestApp(root, activeVersion);
+
+  await cleanupOldVersions(app);
+
+  assert.equal(fs.existsSync(previous), true);
+  assert.equal(fs.existsSync(active), true);
+  assert.equal(fs.existsSync(stray), false);
+  assert.equal(rollbackActiveVersion(app)?.directory, previousDirectory);
 });
 
 test('stable update authentication rejects signed prerelease metadata from another channel', () => {
