@@ -5,7 +5,9 @@
     "changes": [
       "Release verification and compatibility checks now run independent work in parallel, while Worker validation no longer pauses for interactive tooling prompts.",
       "The local browser interface can no longer be embedded by other websites, and public diagnostics uploads are bounded to prevent unbounded storage abuse.",
-      "Stable update checks now reject prerelease metadata from the wrong release channel."
+      "Stable update checks now reject prerelease metadata from the wrong release channel.",
+      "Automatic cleanup now preserves stitched compilations, mixed-audio exports, and the exact rollback build needed while an update is starting.",
+      "Library updates and media actions no longer pause while Clips repeatedly rechecks the full media runtime."
     ]
   },
   {

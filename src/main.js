@@ -8,7 +8,7 @@ const { execFile, execFileSync, spawn } = require('child_process');
 const { promisify } = require('util');
 const { ObsController } = require('./obs');
 const buildInfo = require('./build-info.json');
-const { RUNTIME_VERSION, runtimeRoot, isRuntimeReady, ensureRuntimeInstalled } = require('./runtime');
+const { RUNTIME_VERSION, runtimeRoot, hasRequiredRuntimeFiles, ensureRuntimeInstalled } = require('./runtime');
 const { redirectToActiveVersion, confirmActiveVersionBoot, createStagedUpdater } = require('./updater');
 const { createTrayController } = require('./tray-controller');
 const { MPV_QUIT_ON_FULLSCREEN_EXIT_SCRIPT, mpvFullscreenArgs } = require('./mpv-fullscreen');
@@ -70,6 +70,8 @@ let updateCheckTimeout = null;
 let updateConfigurationGeneration = 0;
 let stagedUpdater = null;
 let runtimeSetupPromise = Promise.resolve();
+let mediaRuntimeReady = !app.isPackaged;
+let mediaRuntimeError = '';
 const logger = createLogger({ directory: path.join(app.getPath('userData'), 'logs') });
 const UPDATE_DIAGNOSTIC_LIMIT = 250;
 const UPDATE_LOG_EVENT_PREFIX = 'staged updater ';
@@ -155,6 +157,26 @@ function captureRuntimeRoot() {
 function captureHostPath() {
   return path.join(captureRuntimeRoot(), 'libobs', 'bin', '64bit', 'clips-capture-host.exe');
 }
+function isNonEmptyFile(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.isFile() && stat.size > 0;
+  }
+  catch { return false; }
+}
+function packagedRuntimeReady() {
+  if (!app.isPackaged || !mediaRuntimeReady) return false;
+  if (hasRequiredRuntimeFiles(persistentRuntimeRoot)) return true;
+  mediaRuntimeReady = false;
+  return false;
+}
+function persistentRuntimeFile(relative, companions = []) {
+  if (!app.isPackaged || !mediaRuntimeReady) return '';
+  const files = [relative, ...companions].map(file => path.join(persistentRuntimeRoot, file));
+  if (files.every(isNonEmptyFile)) return files[0];
+  mediaRuntimeReady = false;
+  return '';
+}
 async function stopLegacyBundledObs() {
   if (!app.isPackaged) return;
   const legacyRoot = path.resolve(path.dirname(persistentRuntimeRoot), 'v1', 'obs-studio').toLowerCase();
@@ -181,12 +203,12 @@ async function stopLegacyBundledObs() {
   }
 }
 function ffmpegPath() {
-  const persistent = path.join(persistentRuntimeRoot, 'ffmpeg', 'ffmpeg.exe');
-  if (app.isPackaged && isRuntimeReady(persistentRuntimeRoot)) return persistent;
+  const persistent = persistentRuntimeFile(path.join('ffmpeg', 'ffmpeg.exe'));
+  if (persistent) return persistent;
   const bundled = path.join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe');
-  if (app.isPackaged && fs.existsSync(bundled)) return bundled;
+  if (app.isPackaged && isNonEmptyFile(bundled)) return bundled;
   const staged = path.join(__dirname, '..', 'vendor', 'ffmpeg', 'ffmpeg.exe');
-  return fs.existsSync(staged) ? staged : '';
+  return isNonEmptyFile(staged) ? staged : '';
 }
 function mpvPath() {
   const candidates = [
@@ -194,7 +216,7 @@ function mpvPath() {
     path.join(process.resourcesPath, 'mpv', 'mpv.exe'),
     path.join(__dirname, '..', 'vendor', 'mpv', 'mpv.exe')
   ];
-  return candidates.find(candidate => candidate && fs.existsSync(candidate)) || '';
+  return candidates.find(candidate => candidate && isNonEmptyFile(candidate)) || '';
 }
 function mpvFullscreenScriptPath() {
   const directory = path.join(app.getPath('userData'), 'mpv');
@@ -458,12 +480,18 @@ async function setMpvAudioMix(requestedAdjustments) {
 }
 async function startMpvSession(filePath, bounds) {
   const target = validateRecordingPath(filePath);
-  const persistentHost = path.join(persistentRuntimeRoot, 'libmpv', 'mpv-host.exe');
+  const persistentHost = persistentRuntimeFile(
+    path.join('libmpv', 'mpv-host.exe'),
+    [path.join('libmpv', 'libmpv-2.dll')]
+  );
   const bundledHost = path.join(process.resourcesPath, 'libmpv', 'mpv-host.exe');
+  const completeHost = host => (
+    isNonEmptyFile(host) && isNonEmptyFile(path.join(path.dirname(host), 'libmpv-2.dll')) ? host : ''
+  );
   const executable = app.isPackaged
-    ? (isRuntimeReady(persistentRuntimeRoot) ? persistentHost : bundledHost)
-    : path.join(__dirname, '..', 'vendor', 'libmpv', 'mpv-host.exe');
-  if (!fs.existsSync(executable)) throw new Error('The native libmpv host is missing from this build.');
+    ? (persistentHost || completeHost(bundledHost))
+    : completeHost(path.join(__dirname, '..', 'vendor', 'libmpv', 'mpv-host.exe'));
+  if (!executable) throw new Error('The native libmpv host is missing from this build.');
   closeMpvSession();
   const handle = win.getNativeWindowHandle();
   const parentId = handle.length >= 8 ? handle.readBigUInt64LE(0).toString() : String(handle.readUInt32LE(0));
@@ -868,8 +896,11 @@ async function tryConnect(captureSettings = settings) {
   connectPromise = (async () => {
     try {
       await runtimeSetupPromise;
+      if (app.isPackaged && !packagedRuntimeReady()) {
+        throw new Error(mediaRuntimeError || 'The Clips media runtime is not ready.');
+      }
       const executable = captureHostPath();
-      if (!fs.existsSync(executable)) throw new Error('The bundled Clips capture engine is missing.');
+      if (!isNonEmptyFile(executable)) throw new Error('The bundled Clips capture engine is missing.');
       await obs.connect({
         executable,
         runtimeRoot: captureRuntimeRoot(),
@@ -900,10 +931,31 @@ async function detectAvailableEncoders() {
 }
 async function state() {
   const [recordings, archived] = await Promise.all([recentRecordings(), archivedRecordings()]);
-  return { settings, obs: await obs.status(), availableEncoders: obs.availableEncoders, selectedEncoder: obs.selectedEncoder,
-    activeGames, autoRecordSuppressed, recordings, archivedRecordings: archived,
-    sessionMarkers, storage: storageInsights(settings.recordingsFolder, [...recordings, ...archived]), lastError, lastClip,
-    captureEngineInstalled: fs.existsSync(captureHostPath()), app: { version: displayVersion(app.getVersion()), buildTime: buildInfo.buildTime, runtimeVersion: RUNTIME_VERSION, runtimeReady: app.isPackaged ? isRuntimeReady(persistentRuntimeRoot) : fs.existsSync(captureHostPath()), changelog }, telemetry: { configured: !!telemetryEndpoint, mode: settings.telemetryMode }, update: updateState };
+  const runtimeReady = app.isPackaged ? packagedRuntimeReady() : isNonEmptyFile(captureHostPath());
+  return {
+    settings,
+    obs: await obs.status(),
+    availableEncoders: obs.availableEncoders,
+    selectedEncoder: obs.selectedEncoder,
+    activeGames,
+    autoRecordSuppressed,
+    recordings,
+    archivedRecordings: archived,
+    sessionMarkers,
+    storage: storageInsights(settings.recordingsFolder, [...recordings, ...archived]),
+    lastError,
+    lastClip,
+    captureEngineInstalled: runtimeReady && isNonEmptyFile(captureHostPath()),
+    app: {
+      version: displayVersion(app.getVersion()),
+      buildTime: buildInfo.buildTime,
+      runtimeVersion: RUNTIME_VERSION,
+      runtimeReady,
+      changelog
+    },
+    telemetry: { configured: !!telemetryEndpoint, mode: settings.telemetryMode },
+    update: updateState
+  };
 }
 
 async function collectSystemInformation() {
@@ -1684,13 +1736,24 @@ app.whenReady().then(async () => {
     setError(new Error(`Browser gateway could not start: ${error.message}`));
   }
   if (app.isPackaged) {
-    runtimeSetupPromise = ensureRuntimeInstalled(process.resourcesPath, persistentRuntimeRoot)
-      .then(stopLegacyBundledObs)
-      .then(() => broadcast())
-      .catch(error => setError(new Error(`Media runtime setup failed: ${error.message}`)));
+    runtimeSetupPromise = ensureRuntimeInstalled(process.resourcesPath, persistentRuntimeRoot, app.getVersion())
+      .then(result => {
+        if (!result.ready) throw new Error('The media runtime did not pass startup verification.');
+        mediaRuntimeReady = true;
+        mediaRuntimeError = '';
+        return result;
+      })
+      .catch(error => {
+        mediaRuntimeReady = false;
+        mediaRuntimeError = `Media runtime setup failed: ${error.message}`;
+        setError(new Error(mediaRuntimeError));
+      });
   }
   await runtimeSetupPromise;
-  await detectAvailableEncoders();
+  if (!app.isPackaged || mediaRuntimeReady) {
+    await stopLegacyBundledObs();
+    await detectAvailableEncoders();
+  }
   scheduleMonitor();
   trayController.create({
     openPreferredUi,
