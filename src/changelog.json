@@ -7,7 +7,7 @@
       "The local browser interface can no longer be embedded by other websites, and public diagnostics uploads are bounded to prevent unbounded storage abuse.",
       "Stable update checks now reject prerelease metadata from the wrong release channel.",
       "Automatic cleanup now preserves stitched compilations, mixed-audio exports, and the exact rollback build needed while an update is starting.",
-      "Library updates and media actions no longer pause while Clips repeatedly rechecks the full media runtime."
+      "Library updates and media actions no longer pause while Clips repeatedly rechecks the full media runtime, while startup integrity checks now cover every packaged native helper and filter resource."
     ]
   },
   {

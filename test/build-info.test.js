@@ -4,7 +4,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { releaseConfigFromEnv, verifyRuntimeAbi } = require('../scripts/write-build-info');
+const {
+  releaseConfigFromEnv,
+  runtimeComponentsFromResources,
+  verifyRuntimeAbi
+} = require('../scripts/write-build-info');
 
 test('release configuration supports every endpoint combination independently', () => {
   assert.deepEqual(releaseConfigFromEnv({}), {});
@@ -41,4 +45,38 @@ test('release builds fail closed when staged OBS changes without a runtime ABI b
   assert.equal(verifyRuntimeAbi({ manifestPath, obsPath }).runtimeVersion, 2);
   fs.writeFileSync(obsPath, 'different obs runtime');
   assert.throws(() => verifyRuntimeAbi({ manifestPath, obsPath }), /changed without an ABI declaration/);
+});
+
+test('build metadata anchors required and supplemental runtime hashes by installed path', t => {
+  const resources = fs.mkdtempSync(path.join(os.tmpdir(), 'clips-runtime-components-'));
+  t.after(() => fs.rmSync(resources, { recursive: true, force: true }));
+  const requiredSources = {
+    'libobs/bin/64bit/obs.dll': 'libobs/bin/64bit/obs.dll',
+    'libobs/bin/64bit/clips-capture-host.exe': 'capture-host/clips-capture-host.exe',
+    'libobs/obs-plugins/64bit/win-capture.dll': 'libobs/obs-plugins/64bit/win-capture.dll',
+    'libobs/obs-plugins/64bit/win-wasapi.dll': 'libobs/obs-plugins/64bit/win-wasapi.dll',
+    'libobs/obs-plugins/64bit/obs-ffmpeg.dll': 'libobs/obs-plugins/64bit/obs-ffmpeg.dll',
+    'ffmpeg/ffmpeg.exe': 'ffmpeg/ffmpeg.exe',
+    'libmpv/mpv-host.exe': 'libmpv/mpv-host.exe',
+    'libmpv/libmpv-2.dll': 'libmpv/libmpv-2.dll'
+  };
+  const expectedRequired = {};
+  for (const [relative, sourceRelative] of Object.entries(requiredSources)) {
+    const source = path.join(resources, ...sourceRelative.split('/'));
+    const contents = `trusted ${relative}`;
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    fs.writeFileSync(source, contents);
+    expectedRequired[relative] = crypto.createHash('sha256').update(contents).digest('hex');
+  }
+  const executable = path.join(resources, 'mpv', 'mpv.exe');
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.writeFileSync(executable, 'trusted standalone mpv');
+
+  assert.deepEqual(runtimeComponentsFromResources(resources), {
+    schema: 1,
+    requiredFiles: expectedRequired,
+    supplementalFiles: {
+      'mpv/mpv.exe': crypto.createHash('sha256').update('trusted standalone mpv').digest('hex')
+    }
+  });
 });

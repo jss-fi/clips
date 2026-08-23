@@ -177,6 +177,12 @@ function persistentRuntimeFile(relative, companions = []) {
   mediaRuntimeReady = false;
   return '';
 }
+async function waitForMediaRuntime() {
+  await runtimeSetupPromise;
+  if (app.isPackaged && !packagedRuntimeReady()) {
+    throw new Error(mediaRuntimeError || 'The Clips media runtime is not ready.');
+  }
+}
 async function stopLegacyBundledObs() {
   if (!app.isPackaged) return;
   const legacyRoot = path.resolve(path.dirname(persistentRuntimeRoot), 'v1', 'obs-studio').toLowerCase();
@@ -212,7 +218,7 @@ function ffmpegPath() {
 }
 function mpvPath() {
   const candidates = [
-    path.join(persistentRuntimeRoot, 'mpv', 'mpv.exe'),
+    persistentRuntimeFile(path.join('mpv', 'mpv.exe')),
     path.join(process.resourcesPath, 'mpv', 'mpv.exe'),
     path.join(__dirname, '..', 'vendor', 'mpv', 'mpv.exe')
   ];
@@ -480,6 +486,7 @@ async function setMpvAudioMix(requestedAdjustments) {
 }
 async function startMpvSession(filePath, bounds) {
   const target = validateRecordingPath(filePath);
+  await waitForMediaRuntime();
   const persistentHost = persistentRuntimeFile(
     path.join('libmpv', 'mpv-host.exe'),
     [path.join('libmpv', 'libmpv-2.dll')]
@@ -895,10 +902,7 @@ async function tryConnect(captureSettings = settings) {
   if (connectPromise) return connectPromise;
   connectPromise = (async () => {
     try {
-      await runtimeSetupPromise;
-      if (app.isPackaged && !packagedRuntimeReady()) {
-        throw new Error(mediaRuntimeError || 'The Clips media runtime is not ready.');
-      }
+      await waitForMediaRuntime();
       const executable = captureHostPath();
       if (!isNonEmptyFile(executable)) throw new Error('The bundled Clips capture engine is missing.');
       await obs.connect({
@@ -1549,8 +1553,9 @@ async function toggleRecording() {
   return state();
 }
 
-function openRecording(filePath) {
+async function openRecording(filePath) {
   const target = validateRecordingPath(filePath);
+  await waitForMediaRuntime();
   const executable = mpvPath();
   if (!executable) throw new Error('Bundled MPV is missing from this Clips build.');
   spawn(executable, ['--force-window=yes', target], { detached: true, windowsHide: false, stdio: 'ignore' }).unref();
@@ -1691,6 +1696,20 @@ app.whenReady().then(async () => {
   await requestTelemetryPreference();
   configureTelemetry({ sendStartup: true });
   app.setLoginItemSettings({ openAtLogin: !!settings.startWithWindows, args: ['--hidden'] });
+  if (app.isPackaged) {
+    runtimeSetupPromise = ensureRuntimeInstalled(process.resourcesPath, persistentRuntimeRoot, app.getVersion())
+      .then(result => {
+        if (!result.ready) throw new Error('The media runtime did not pass startup verification.');
+        mediaRuntimeReady = true;
+        mediaRuntimeError = '';
+        return result;
+      })
+      .catch(error => {
+        mediaRuntimeReady = false;
+        mediaRuntimeError = `Media runtime setup failed: ${error.message}`;
+        setError(new Error(mediaRuntimeError));
+      });
+  }
   createWindow(); createOverlayWindow(); registerHotkey(); configureUpdates();
   gateway = createGateway({
     token: gatewayToken,
@@ -1734,20 +1753,6 @@ app.whenReady().then(async () => {
   } catch (error) {
     gatewayReady = false;
     setError(new Error(`Browser gateway could not start: ${error.message}`));
-  }
-  if (app.isPackaged) {
-    runtimeSetupPromise = ensureRuntimeInstalled(process.resourcesPath, persistentRuntimeRoot, app.getVersion())
-      .then(result => {
-        if (!result.ready) throw new Error('The media runtime did not pass startup verification.');
-        mediaRuntimeReady = true;
-        mediaRuntimeError = '';
-        return result;
-      })
-      .catch(error => {
-        mediaRuntimeReady = false;
-        mediaRuntimeError = `Media runtime setup failed: ${error.message}`;
-        setError(new Error(mediaRuntimeError));
-      });
   }
   await runtimeSetupPromise;
   if (!app.isPackaged || mediaRuntimeReady) {
@@ -1806,8 +1811,9 @@ ipcMain.handle('mpv:pause', (_event, paused = true) => mpvCommand('pause', pause
 ipcMain.handle('mpv:volume', (_event, volume) => mpvCommand('volume', Math.min(100, Math.max(0, Number(volume) || 0))));
 ipcMain.handle('mpv:audio-mix', (_event, adjustments) => setMpvAudioMix(adjustments));
 ipcMain.handle('mpv:close', () => closeMpvSession());
-ipcMain.handle('mpv:fullscreen', (_event, filePath) => {
+ipcMain.handle('mpv:fullscreen', async (_event, filePath) => {
   const target = validateRecordingPath(filePath);
+  await waitForMediaRuntime();
   const executable = mpvPath();
   if (!executable) throw new Error('Bundled MPV is missing from this Clips build.');
   const fullscreenPlayer = spawn(executable, mpvFullscreenArgs(mpvFullscreenScriptPath(), target), {
