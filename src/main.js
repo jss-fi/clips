@@ -1134,6 +1134,7 @@ function configureUpdates() {
   stagedUpdater = createStagedUpdater({
     app,
     feedUrl: updateUrl,
+    channel: settings?.nightlyUpdates ? 'nightly' : 'stable',
     logger,
     onDiagnostic: recordUpdateDiagnostic,
     onState: next => {

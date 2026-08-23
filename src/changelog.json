@@ -3,7 +3,9 @@
     "version": "next",
     "title": "Faster, unattended releases",
     "changes": [
-      "Release verification and compatibility checks now run independent work in parallel, while Worker validation no longer pauses for interactive tooling prompts."
+      "Release verification and compatibility checks now run independent work in parallel, while Worker validation no longer pauses for interactive tooling prompts.",
+      "The local browser interface can no longer be embedded by other websites, and public diagnostics uploads are bounded to prevent unbounded storage abuse.",
+      "Stable update checks now reject prerelease metadata from the wrong release channel."
     ]
   },
   {

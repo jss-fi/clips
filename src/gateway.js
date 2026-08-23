@@ -101,6 +101,10 @@ function createGateway({
           'Cache-Control': 'no-store',
           'Content-Type': asset[1],
           'Content-Length': body.length,
+          ...(asset[0] === 'index' ? {
+            'Content-Security-Policy': "frame-ancestors 'none'",
+            'X-Frame-Options': 'DENY'
+          } : {}),
           'X-Content-Type-Options': 'nosniff'
         });
         response.end(body);
@@ -149,9 +153,10 @@ function createGateway({
           promise: Promise.resolve(approvePairing({ origin, clientName }))
         };
         pairingRequest = current;
-        current.promise.finally(() => {
+        const clearPairingRequest = () => {
           if (pairingRequest === current) pairingRequest = null;
-        });
+        };
+        current.promise.then(clearPairingRequest, clearPairingRequest);
       }
       if (!await pairingRequest.promise) {
         json(response, 403, { error: 'Pairing was not approved in Clips.' }, origin);

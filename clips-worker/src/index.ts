@@ -1,6 +1,8 @@
 import { serve as serveUpdates } from './updates';
 import { serveTelemetry } from './telemetry';
 
+export { TelemetryAdmission } from './telemetry-admission';
+
 function withoutPrefix(request: Request, prefix: string): Request {
   const url = new URL(request.url);
   url.pathname = url.pathname.slice(prefix.length) || '/';
@@ -25,7 +27,11 @@ export default {
       return serveUpdates(withoutPrefix(request, '/cdn'), env.UPDATES);
     }
     if (pathname === '/telemetry' || pathname.startsWith('/telemetry/')) {
-      return serveTelemetry(withoutPrefix(request, '/telemetry'), env.TELEMETRY);
+      return serveTelemetry(withoutPrefix(request, '/telemetry'), env.TELEMETRY, {
+        client: env.TELEMETRY_CLIENT_RATE_LIMIT,
+        service: env.TELEMETRY_SERVICE_RATE_LIMIT,
+        admission: env.TELEMETRY_ADMISSION
+      });
     }
     if (pathname === '/download' || pathname === '/download/' || pathname === '/download/stable' || pathname === '/download/setup') {
       const metadata = await env.UPDATES.get('releases/stable/latest.yml');
