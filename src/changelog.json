@@ -1,6 +1,6 @@
 [
   {
-    "version": "next",
+    "version": "0.6-nightly.16",
     "title": "Quieter recording warnings",
     "changes": [
       "Frame-drop warnings stay quiet after the recorded game closes and while it is in the background, with a short grace period after returning to the game."
