@@ -1,6 +1,13 @@
 [
   {
     "version": "next",
+    "title": "Quieter recording warnings",
+    "changes": [
+      "Frame-drop warnings stay quiet after the recorded game closes and while it is in the background, with a short grace period after returning to the game."
+    ]
+  },
+  {
+    "version": "0.6-nightly.15",
     "title": "Reliable capture shutdown",
     "changes": [
       "Fixed a JavaScript error dialog when the capture engine shuts down while status or microphone polling is active."

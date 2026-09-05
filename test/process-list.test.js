@@ -5,7 +5,7 @@ const { updateCandidateHistory } = require('../src/game-candidates');
 
 test('process list parsing normalizes a single PowerShell object', () => {
   assert.deepEqual(parseProcessList('{"name":"game.exe","path":null,"title":"Game","windowClass":"GameWnd","bounds":null}'), [{
-    name: 'game.exe', path: '', title: 'Game', windowClass: 'GameWnd', isFullscreen: false, bounds: null
+    name: 'game.exe', path: '', title: 'Game', windowClass: 'GameWnd', isFullscreen: false, isForeground: false, bounds: null
   }]);
 });
 
@@ -20,4 +20,9 @@ test('process list parsing preserves fullscreen game candidates', () => {
 
 test('process list parsing rejects incomplete PowerShell JSON', () => {
   assert.throws(() => parseProcessList('[{"name":"game.exe"}'), SyntaxError);
+});
+
+test('process list preserves explicit foreground state and defaults unknown focus to false', () => {
+  const processes = parseProcessList('[{"name":"game.exe","isForeground":true},{"name":"other.exe","isForeground":"true"}]');
+  assert.deepEqual(processes.map(process => process.isForeground), [true, false]);
 });

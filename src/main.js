@@ -16,6 +16,7 @@ const { createLogger, readRecentLogEntries, redactLogText } = require('./logger'
 const { loadSettingsFile, normalizeSettingsUpdate, captureRestartRequired } = require('./settings');
 const { configuredEndpoint, loadInstallationId, createTelemetry } = require('./telemetry');
 const { parseProcessList } = require('./process-list');
+const { CaptureHealth } = require('./capture-health');
 const { candidateKey, updateCandidateHistory } = require('./game-candidates');
 const { displayVersion } = require('./version');
 const { LibraryMetadata, storageInsights, concatManifest } = require('./library');
@@ -85,7 +86,7 @@ const trayController = createTrayController({ getWindow: () => win });
 const telemetryEndpoint = configuredEndpoint();
 let telemetry = null;
 let systemInformation = null;
-let previousCaptureHealth = null;
+const captureHealth = new CaptureHealth();
 const gameCandidateHistory = new Map();
 let pendingGameCandidate = null;
 const ADD_GAME_HOTKEY = 'CommandOrControl+Shift+F11';
@@ -109,8 +110,7 @@ let gatewayReady = false;
 let sessionStartedAt = 0;
 let sessionMarkers = [];
 let sessionGame = '';
-let lastCaptureWarningTime = 0;
-let captureWarningWindow = { startedAt: 0, renderingLag: 0, encoderDrops: 0 };
+let sessionCaptureTargets = [];
 let lastProblemOverlay = { message: '', time: 0 };
 const obs = new ObsController(() => broadcast(), logger);
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
@@ -289,6 +289,8 @@ async function startSession({ recording = true, replayLengthSeconds = 0, storage
   sessionStartedAt = recording ? Date.now() : 0;
   sessionMarkers = recording ? [] : sessionMarkers;
   sessionGame = activeGames[0] || 'Desktop capture';
+  sessionCaptureTargets = [...activeGames];
+  captureHealth.reset();
   if (recording) showOverlayToast('Recording started', 'recording');
 }
 
@@ -687,6 +689,8 @@ using System;
 using System.Text;
 using System.Runtime.InteropServices;
 public static class ClipsProcessWindow {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder text, int count);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out ClipsWindowRect rect);
   [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
@@ -705,6 +709,8 @@ public struct ClipsMonitorInfo {
   public uint Flags;
 }
 '@
+$foregroundProcessId = [uint32]0
+[ClipsProcessWindow]::GetWindowThreadProcessId([ClipsProcessWindow]::GetForegroundWindow(), [ref]$foregroundProcessId) | Out-Null
 Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object {
   try {
     $processPath = $null
@@ -728,6 +734,7 @@ Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object {
       title = $_.MainWindowTitle
       windowClass = $windowClass.ToString()
       isFullscreen = $isFullscreen
+      isForeground = $_.Id -eq $foregroundProcessId
       bounds = if ($hasBounds) { [pscustomobject]@{
         x = $windowRect.Left
         y = $windowRect.Top
@@ -747,7 +754,7 @@ Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object {
       logger.warn('process list refresh attempt failed', { attempt, bytes: Buffer.byteLength(stdout || ''), message: error.message });
       if (attempt === 2) {
         logger.warn('process list refresh failed; retaining the previous snapshot', { applications: runningApps.length });
-        return runningApps;
+        return runningApps.map(application => ({ ...application, isForeground: false }));
       }
     }
   }
@@ -810,38 +817,15 @@ async function monitor() {
   broadcast();
 }
 function inspectCaptureHealth(status) {
-  if (!status.recording) {
-    previousCaptureHealth = null;
-    captureWarningWindow = { startedAt: 0, renderingLag: 0, encoderDrops: 0 };
-    return;
-  }
-  const current = {
-    rendered: Number(status.renderedFrames) || 0,
-    lagged: Number(status.laggedFrames) || 0,
-    output: Number(status.outputFrames) || 0,
-    dropped: Number(status.droppedFrames) || 0
-  };
-  const previous = previousCaptureHealth;
-  previousCaptureHealth = current;
-  if (!previous || current.rendered < previous.rendered || current.output < previous.output) return;
-  const renderingLag = Math.max(0, current.lagged - previous.lagged);
-  const encoderDrops = Math.max(0, current.dropped - previous.dropped);
-  if (!renderingLag && !encoderDrops) return;
-  const now = Date.now();
-  if (!captureWarningWindow.startedAt || now - captureWarningWindow.startedAt > 60000) {
-    captureWarningWindow = { startedAt: now, renderingLag: 0, encoderDrops: 0 };
-  }
-  captureWarningWindow.renderingLag += renderingLag;
-  captureWarningWindow.encoderDrops += encoderDrops;
-  const noticeableBurst = renderingLag >= 6 || encoderDrops >= 3;
-  const noticeableSustainedLoss = captureWarningWindow.renderingLag >= 12 || captureWarningWindow.encoderDrops >= 6;
-  logger.warn('capture frame drops detected', { renderingLag, encoderDrops, warning: noticeableBurst || noticeableSustainedLoss });
-  if (!noticeableBurst && !noticeableSustainedLoss) return;
-  if (now - lastCaptureWarningTime < 60000) return;
-  lastCaptureWarningTime = now;
-  const windowRenderingLag = captureWarningWindow.renderingLag;
-  const windowEncoderDrops = captureWarningWindow.encoderDrops;
-  captureWarningWindow = { startedAt: now, renderingLag: 0, encoderDrops: 0 };
+  const result = captureHealth.inspect(status, {
+    applications: runningApps,
+    targets: sessionCaptureTargets,
+    sessionId: sessionStartedAt
+  });
+  if (!result) return;
+  const { renderingLag, encoderDrops, warning, windowRenderingLag, windowEncoderDrops } = result;
+  logger.warn('capture frame drops detected', { renderingLag, encoderDrops, warning });
+  if (!warning) return;
   const frames = windowRenderingLag + windowEncoderDrops;
   const detail = windowRenderingLag && windowEncoderDrops
     ? 'The GPU and video encoder could not keep up. Try lowering resolution, quality, or FPS.'
