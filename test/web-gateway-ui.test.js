@@ -104,9 +104,8 @@ test('opening the browser UI reuses a connected tab', () => {
   assert.match(web, /await pairGateway\(\)/);
 });
 
-test('isolated frame misses stay in diagnostics without showing an overlay', () => {
+test('capture health diagnostics only show an overlay when the health policy requests it', () => {
   const main = source('src/main.js');
-  assert.match(main, /renderingLag >= 6 \|\| encoderDrops >= 3/);
-  assert.match(main, /captureWarningWindow\.renderingLag >= 12 \|\| captureWarningWindow\.encoderDrops >= 6/);
-  assert.match(main, /if \(!noticeableBurst && !noticeableSustainedLoss\) return/);
+  assert.match(main, /captureHealth\.inspect\(status/);
+  assert.match(main, /logger.warn\('capture frame drops detected', \{ renderingLag, encoderDrops, warning \}\);\s*if \(!warning\) return;/);
 });

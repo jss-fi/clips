@@ -5,6 +5,7 @@ function normalizeProcessList(parsed) {
     title: item.title || item.name,
     windowClass: item.windowClass || '',
     isFullscreen: item.isFullscreen === true,
+    isForeground: item.isForeground === true,
     bounds: item.bounds ? {
       x: Number(item.bounds.x),
       y: Number(item.bounds.y),
