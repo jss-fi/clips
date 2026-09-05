@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const childProcess = require('child_process');
 const path = require('path');
 
 class ObsController {
@@ -7,6 +7,7 @@ class ObsController {
     this.logger = logger;
     this.child = null;
     this.connected = false;
+    this.stopping = false;
     this.nextRequestId = 0;
     this.pending = new Map();
     this.stdoutBuffer = '';
@@ -18,7 +19,8 @@ class ObsController {
   }
 
   request(command, data = {}, timeoutMs = 30000) {
-    if (!this.child?.stdin?.writable) return Promise.reject(new Error('The Clips capture engine is offline.'));
+    const child = this.child;
+    if (!child?.stdin?.writable || child.stdin.destroyed || this.stopping) return Promise.reject(new Error('The Clips capture engine is offline.'));
     const id = ++this.nextRequestId;
     if (command !== 'status' && command !== 'microphoneLevel') {
       this.logger?.info('capture request', {
@@ -46,12 +48,19 @@ class ObsController {
         if (child && !child.killed) child.kill?.();
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timeout });
-      this.child.stdin.write(`${JSON.stringify({ id, command, ...data })}\n`, error => {
-        if (!error) return;
+      const failWrite = error => {
         clearTimeout(timeout);
         this.pending.delete(id);
         reject(error);
-      });
+        this.handleChildError(child, error);
+      };
+      try {
+        child.stdin.write(`${JSON.stringify({ id, command, ...data })}\n`, error => {
+          if (error) failWrite(error);
+        });
+      } catch (error) {
+        failWrite(error);
+      }
     });
   }
 
@@ -101,7 +110,9 @@ class ObsController {
 
   handleChildError(child, error) {
     if (this.child !== child) return;
+    this.logger?.error?.('capture engine transport failed', { message: error.message, code: error.code });
     this.handleExit(error);
+    if (!child.killed) child.kill?.();
   }
 
   async connect({ executable, runtimeRoot, configRoot, settings }) {
@@ -109,12 +120,16 @@ class ObsController {
     if (this.child) await this.disconnect();
     this.settings = { ...settings };
     this.stdoutBuffer = '';
-    const child = spawn(executable, [], {
+    const child = childProcess.spawn(executable, [], {
       cwd: path.join(runtimeRoot, 'libobs', 'bin', '64bit'),
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
     });
     this.child = child;
+    this.stopping = false;
+    // A failed write invokes its callback AND emits an error on stdin.
+    // Keep this listener even after exit to absorb delayed pipe errors.
+    child.stdin.on('error', error => this.handleChildError(child, error));
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => this.handleStdout(chunk));
     child.stderr.setEncoding('utf8');
@@ -155,7 +170,12 @@ class ObsController {
   async disconnect() {
     const child = this.child;
     if (!child) return;
-    await this.request('shutdown', {}, 10000).catch(() => {});
+    if (this.stopping) return;
+    const shutdown = this.request('shutdown', {}, 10000);
+    this.stopping = true;
+    this.connected = false;
+    await shutdown.catch(() => {});
+    if (this.child !== child) return;
     this.child = null;
     this.connected = false;
     if (!child.killed) child.kill();

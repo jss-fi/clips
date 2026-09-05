@@ -1,6 +1,60 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { ObsController } = require('../src/obs');
+const childProcess = require('node:child_process');
+const { EventEmitter } = require('node:events');
+const { PassThrough, Writable } = require('node:stream');
+
+test('stdin EPIPE rejects pending requests without an uncaught stream error', async t => {
+  const failure = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => { child.killed = true; };
+  child.stdin = new Writable({ write(chunk, encoding, callback) { callback(failure); } });
+  t.mock.method(childProcess, 'spawn', () => child);
+  const controller = new ObsController();
+  await assert.rejects(controller.connect({ executable: 'capture-host', runtimeRoot: '.', settings: {} }), /EPIPE/);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controller.child, null);
+  assert.equal(controller.pending.size, 0);
+  assert.equal(child.killed, true);
+  const replacement = {};
+  controller.child = replacement;
+  child.stdin.emit('error', failure);
+  assert.equal(controller.child, replacement);
+});
+
+test('shutdown blocks polling before the engine closes its pipe', async () => {
+  const controller = new ObsController();
+  const commands = [];
+  controller.connected = true;
+  controller.child = {
+    kill() {},
+    stdin: { writable: true, write(line) { commands.push(JSON.parse(line)); } }
+  };
+  const shutdown = controller.disconnect();
+  await assert.rejects(controller.request('microphoneLevel'), /offline/);
+  assert.equal((await controller.status()).connected, false);
+  assert.deepEqual(commands.map(request => request.command), ['shutdown']);
+  controller.handleStdout(`${JSON.stringify({ id: commands[0].id, ok: true })}\n`);
+  await shutdown;
+  assert.equal(controller.pending.size, 0);
+});
+
+test('synchronous pipe failures clear all pending requests and terminate the host', async () => {
+  const controller = new ObsController();
+  const child = { stdin: { writable: true, write() {} }, kill() { this.killed = true; } };
+  controller.child = child;
+  const pending = controller.request('status');
+  child.stdin.write = () => { throw new Error('write EPIPE'); };
+  await Promise.all([
+    assert.rejects(pending, /EPIPE/),
+    assert.rejects(controller.request('microphoneLevel'), /EPIPE/)
+  ]);
+  assert.equal(controller.pending.size, 0);
+  assert.equal(child.killed, true);
+});
 
 test('stopSession allows the capture engine time to finalize its outputs', async () => {
   const controller = new ObsController();

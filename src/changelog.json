@@ -1,5 +1,12 @@
 [
   {
+    "version": "next",
+    "title": "Reliable capture shutdown",
+    "changes": [
+      "Fixed a JavaScript error dialog when the capture engine shuts down while status or microphone polling is active."
+    ]
+  },
+  {
     "version": "0.6-nightly.14",
     "title": "Faster update downloads",
     "changes": [
